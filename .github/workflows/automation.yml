@@ -5,6 +5,9 @@ on:
     - cron: '0 */6 * * *'  # Run every 6 hours
   workflow_dispatch:  # Allow manual trigger
 
+permissions:
+  contents: read
+
 concurrency:
   group: funny-animation-shorts
   cancel-in-progress: false  # Let the running job finish; queue at most one
