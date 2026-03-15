@@ -458,6 +458,101 @@ class TestDownloadFromFreeMusicArchive(unittest.TestCase):
             )
         self.assertIsNotNone(result)
 
+    def test_uses_percent_encoding_for_spaces(self):
+        """The FMA request URL must use %20 for spaces, not +."""
+        captured_urls = []
+
+        def _capture(url, **kwargs):
+            captured_urls.append(url)
+            raise Exception("stop after capture")
+
+        with patch("src.music_selector.requests.get", side_effect=_capture):
+            self.ms._download_from_free_music_archive(
+                "cooking groove", Path("/tmp"), "cachekey"
+            )
+
+        self.assertTrue(captured_urls, "requests.get was not called")
+        self.assertIn("%20", captured_urls[0],
+                      "spaces should be encoded as %20 in the FMA request URL")
+        self.assertNotIn("+", captured_urls[0].split("?")[1],
+                         "spaces must not be encoded as + in the FMA request URL")
+
+    def test_retries_on_429_and_eventually_returns_none(self):
+        """HTTP 429 responses trigger retries; returns None after max retries."""
+        import requests as _requests
+
+        http_error = _requests.HTTPError(response=MagicMock(status_code=429))
+        with patch("src.music_selector.requests.get", side_effect=http_error), \
+             patch("src.music_selector.time.sleep") as mock_sleep:
+            result = self.ms._download_from_free_music_archive(
+                "cooking groove", Path("/tmp"), "cachekey"
+            )
+
+        self.assertIsNone(result)
+        # sleep is called on every retry attempt (all _FMA_MAX_RETRIES of them)
+        self.assertEqual(mock_sleep.call_count, self.ms._FMA_MAX_RETRIES)
+
+    def test_no_retry_on_404(self):
+        """HTTP 404 is a permanent error; must not trigger retries."""
+        import requests as _requests
+
+        http_error = _requests.HTTPError(response=MagicMock(status_code=404))
+        with patch("src.music_selector.requests.get", side_effect=http_error), \
+             patch("src.music_selector.time.sleep") as mock_sleep:
+            result = self.ms._download_from_free_music_archive(
+                "bad query", Path("/tmp"), "cachekey"
+            )
+
+        self.assertIsNone(result)
+        mock_sleep.assert_not_called()
+
+
+class TestSanitizeTopic(unittest.TestCase):
+    """Tests for music_selector._sanitize_topic()."""
+
+    def setUp(self):
+        from src.music_selector import _sanitize_topic
+        self.sanitize = _sanitize_topic
+
+    def test_removes_special_characters(self):
+        """Special characters are replaced with spaces and collapsed."""
+        self.assertEqual(self.sanitize("london vs arsenal"), "london vs arsenal")
+        self.assertEqual(self.sanitize("pasta & sauce!"), "pasta sauce")
+        self.assertEqual(self.sanitize("fish 'n' chips"), "fish n chips")
+        self.assertEqual(self.sanitize("london vs. arsenal"), "london vs arsenal")
+
+    def test_collapses_extra_whitespace(self):
+        result = self.sanitize("  too   many   spaces  ")
+        self.assertNotIn("  ", result)
+        self.assertEqual(result, result.strip())
+
+    def test_empty_string_returns_empty(self):
+        self.assertEqual(self.sanitize(""), "")
+
+    def test_plain_words_unchanged(self):
+        self.assertEqual(self.sanitize("energetic cooking"), "energetic cooking")
+
+
+class TestGetMusicForScenesWavCache(unittest.TestCase):
+    """Tests that the cache lookup recognises WAV silence-fallback files."""
+
+    def setUp(self):
+        import src.music_selector as ms
+        self.ms = ms
+
+    def test_returns_cached_wav_file(self):
+        """A previously generated WAV silence file is served from cache."""
+        fake_wav_path = Path("/tmp/cache/abc123_silence.wav")
+        with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
+             patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache"), \
+             patch("src.music_selector.Path") as mock_path_cls:
+            mock_dir = MagicMock()
+            mock_dir.glob.return_value = [fake_wav_path]
+            mock_dir.mkdir.return_value = None
+            mock_path_cls.return_value = mock_dir
+            result = self.ms.get_music_for_scenes(["cooking scene"], "chicken tikka")
+        self.assertEqual(result, fake_wav_path)
+
 
 if __name__ == "__main__":
     unittest.main()

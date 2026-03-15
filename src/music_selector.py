@@ -17,8 +17,11 @@ API calls across pipeline runs.
 
 import hashlib
 import logging
+import re
+import time
 import wave
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -50,6 +53,33 @@ _SCENE_MOOD_MAP: dict[str, list[str]] = {
 _FREESOUND_SEARCH_URL = "https://freesound.org/apiv2/search/text/"
 _PIXABAY_API_URL = "https://pixabay.com/api/"
 _FMA_API_URL = "https://freemusicarchive.org/api/get/tracks.json"
+
+# Retry settings for transient API failures (429 Too Many Requests, 503 Service Unavailable)
+_FMA_MAX_RETRIES = 3
+_FMA_RETRY_STATUSES = frozenset({429, 503})
+
+
+# ---------------------------------------------------------------------------
+# Private utilities
+# ---------------------------------------------------------------------------
+
+def _sanitize_topic(topic: str) -> str:
+    """Strip characters from *topic* that could break API query strings.
+
+    Replaces any character that is not a word character (letter, digit, or
+    underscore) or ASCII space with a single space, then collapses runs of
+    whitespace so the result is a clean, human-readable phrase.
+
+    Args:
+        topic: Raw topic string from the script generator (may contain
+               punctuation, special characters, or Unicode symbols).
+
+    Returns:
+        A sanitised version of *topic* suitable for inclusion in a URL
+        query parameter.
+    """
+    sanitized = re.sub(r"[^\w\s]", " ", topic)
+    return " ".join(sanitized.split())
 
 
 # ---------------------------------------------------------------------------
@@ -132,12 +162,17 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
     total = len(scenes)
     primary_scene_type = "intro" if total <= 2 else "middle"
     mood_query = get_mood_for_scene(primary_scene_type)
-    # Blend the food topic into the search for more relevant results
-    search_query = f"{mood_query} {topic}".strip() if topic else mood_query
+    # Sanitize the topic to remove characters that could break API query strings,
+    # then blend it into the search for more relevant results.
+    clean_topic = _sanitize_topic(topic) if topic else ""
+    search_query = f"{mood_query} {clean_topic}".strip() if clean_topic else mood_query
 
-    # Check local cache before hitting the API
+    # Check local cache before hitting the API (MP3 downloads and WAV silence fallbacks)
     cache_key = hashlib.md5(search_query.encode()).hexdigest()[:12]
-    cached = list(cache_dir.glob(f"{cache_key}_*.mp3"))
+    cached = (
+        list(cache_dir.glob(f"{cache_key}_*.mp3"))
+        or list(cache_dir.glob(f"{cache_key}_*.wav"))
+    )
     if cached:
         logger.info("Using cached background music: %s", cached[0])
         return cached[0]
@@ -242,59 +277,86 @@ def _download_from_free_music_archive(query: str, cache_dir: Path, cache_key: st
     No API key is required.  Downloads the first available track whose
     download URL is exposed by the API.
 
+    The query is percent-encoded (using ``%20`` for spaces rather than ``+``)
+    to avoid 404 errors from the FMA API.  Transient server errors (HTTP 429
+    and 503) are retried with exponential backoff up to ``_FMA_MAX_RETRIES``
+    times before giving up.
+
     Args:
-        query:     Search query string.
+        query:     Search query string (will be sanitised and URL-encoded).
         cache_dir: Directory to save the downloaded file.
         cache_key: Short hash used as part of the cached filename.
 
     Returns:
         Path to the downloaded MP3, or ``None`` on any failure.
     """
-    try:
-        resp = requests.get(
-            _FMA_API_URL,
-            params={
-                "q": query,
-                "limit": 5,
-                "sort": "track_date_published",
-                "order": "desc",
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-        tracks = resp.json().get("aTracks", [])
+    # Build the request URL with explicit percent-encoding (%20 for spaces)
+    # so that the FMA API receives a well-formed query string.
+    params_str = urlencode(
+        {"q": query, "limit": 5, "sort": "track_date_published", "order": "desc"},
+        quote_via=quote,
+    )
+    request_url = f"{_FMA_API_URL}?{params_str}"
 
-        if not tracks:
-            logger.debug("Free Music Archive returned no results for query '%s'", query)
+    for attempt in range(_FMA_MAX_RETRIES):
+        try:
+            resp = requests.get(request_url, timeout=15)
+            resp.raise_for_status()
+            tracks = resp.json().get("aTracks", [])
+
+            if not tracks:
+                logger.debug("Free Music Archive returned no results for query '%s'", query)
+                return None
+
+            for track in tracks:
+                download_url = track.get("track_file") or track.get("track_url")
+                if not download_url:
+                    continue
+
+                track_id = track.get("track_id", "unknown")
+                out_path = cache_dir / f"{cache_key}_fma_{track_id}.mp3"
+
+                try:
+                    with requests.get(download_url, stream=True, timeout=30) as r:
+                        r.raise_for_status()
+                        with open(out_path, "wb") as fh:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                fh.write(chunk)
+                    logger.info(
+                        "Downloaded Free Music Archive track '%s' (id=%s) → %s",
+                        track.get("track_title", track_id), track_id, out_path,
+                    )
+                    return out_path
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Failed to download FMA track id=%s: %s", track_id, exc)
+
             return None
 
-        for track in tracks:
-            download_url = track.get("track_file") or track.get("track_url")
-            if not download_url:
-                continue
-
-            track_id = track.get("track_id", "unknown")
-            out_path = cache_dir / f"{cache_key}_fma_{track_id}.mp3"
-
-            try:
-                with requests.get(download_url, stream=True, timeout=30) as r:
-                    r.raise_for_status()
-                    with open(out_path, "wb") as fh:
-                        for chunk in r.iter_content(chunk_size=8192):
-                            fh.write(chunk)
-                logger.info(
-                    "Downloaded Free Music Archive track '%s' (id=%s) → %s",
-                    track.get("track_title", track_id), track_id, out_path,
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            if exc.response is not None and exc.response.status_code in _FMA_RETRY_STATUSES:
+                wait = 2 ** attempt
+                logger.warning(
+                    "Free Music Archive transient error (HTTP %s) for query '%s' — "
+                    "retrying in %ds (attempt %d/%d)",
+                    status, query, wait, attempt + 1, _FMA_MAX_RETRIES,
                 )
-                return out_path
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Failed to download FMA track id=%s: %s", track_id, exc)
+                time.sleep(wait)
+                continue
+            logger.warning(
+                "Free Music Archive search failed for query '%s': HTTP %s — %s",
+                query, status, exc,
+            )
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Free Music Archive search failed for query '%s': %s", query, exc)
+            return None
 
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Free Music Archive search failed for query '%s': %s", query, exc)
-
+    logger.warning(
+        "Free Music Archive search gave up after %d retries for query '%s'",
+        _FMA_MAX_RETRIES, query,
+    )
     return None
-
 
 
 def _download_from_freesound(query: str, cache_dir: Path, cache_key: str) -> Path | None:
