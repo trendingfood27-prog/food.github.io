@@ -49,4 +49,10 @@ jobs:
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Optional: Pixabay API key enables Pixabay Music as the primary music source
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          # Optional: Unsplash key enables food-photography image fallback
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+          # Optional: Freesound key enables Freesound as a music fallback source
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
         run: python -m src.pipeline

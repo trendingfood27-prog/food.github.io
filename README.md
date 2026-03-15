@@ -91,12 +91,34 @@ Go to **Settings → Secrets → Actions** in your fork and add:
 | `PIXABAY_API_KEY` | _(Optional)_ Your Pixabay key | [pixabay.com/api/docs](https://pixabay.com/api/docs/) |
 | `UNSPLASH_ACCESS_KEY` | _(Optional)_ Your Unsplash key | [unsplash.com/developers](https://unsplash.com/developers) |
 | `NEWSAPI_KEY` | _(Optional)_ Your NewsAPI key | [newsapi.org](https://newsapi.org/) |
+| `FREESOUND_API_KEY` | _(Optional)_ Your Freesound key | [freesound.org/apiv2/apply](https://freesound.org/apiv2/apply/) |
 
 ### Step 5 — Enable GitHub Actions
 
 Go to **Actions** tab in your fork and click **"I understand my workflows, go ahead and enable them"**.
 
 The pipeline will automatically run every 6 hours and upload a new food video to your channel.
+
+---
+
+## 🎵 Free Music Sources & Fallbacks
+
+Background music is sourced automatically using a **multi-source fallback chain** — no single point of failure. Each source is tried in order until one succeeds:
+
+| Priority | Source | API Key | Notes |
+|----------|--------|---------|-------|
+| 1️⃣ Primary | [Pixabay Music](https://pixabay.com/api/docs/) | `PIXABAY_API_KEY` _(optional)_ | High-quality royalty-free tracks |
+| 2️⃣ Secondary | [Free Music Archive](https://freemusicarchive.org) | None required | Creative Commons licensed music |
+| 3️⃣ Optional | [Freesound](https://freesound.org/apiv2/apply/) | `FREESOUND_API_KEY` _(optional)_ | Large community sound library |
+| 4️⃣ Fallback | Silence Generator | None required | Always succeeds — guarantees an audio track |
+
+**How it works:**
+- If `PIXABAY_API_KEY` is set, Pixabay Music is tried first (highest quality).
+- Free Music Archive is always tried next — no API key needed.
+- If `FREESOUND_API_KEY` is set, Freesound is tried as an additional source.
+- If all network sources fail, a silent audio track is generated locally so the pipeline never fails due to missing music.
+
+> **No music secrets?** The pipeline still works. Free Music Archive requires no key, and the silence generator ensures the pipeline always has an audio track.
 
 ---
 

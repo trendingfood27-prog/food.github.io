@@ -1095,6 +1095,60 @@ PEXELS_API_KEY         → Your free Pexels API key</pre>
           </li>
         </ol>
       </div>
+
+      <!-- Optional: Music API Keys -->
+      <div class="card fade-in" id="music-sources-card">
+        <h2>🎵 Free Music Sources &amp; Fallbacks</h2>
+        <p class="card-description">
+          Background music is sourced automatically using a multi-source fallback chain — no manual
+          configuration required. Each source is tried in order until one succeeds.
+        </p>
+        <table class="cost-table" style="margin-top:1rem;">
+          <thead>
+            <tr>
+              <th>Priority</th>
+              <th>Source</th>
+              <th>API Key Required</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1️⃣ Primary</td>
+              <td><a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener">Pixabay Music</a></td>
+              <td><code>PIXABAY_API_KEY</code> <em>(optional)</em></td>
+              <td>High-quality royalty-free tracks</td>
+            </tr>
+            <tr>
+              <td>2️⃣ Secondary</td>
+              <td><a href="https://freemusicarchive.org" target="_blank" rel="noopener">Free Music Archive</a></td>
+              <td><span class="free-badge">None needed</span></td>
+              <td>Creative Commons licensed music</td>
+            </tr>
+            <tr>
+              <td>3️⃣ Optional</td>
+              <td><a href="https://freesound.org/apiv2/apply/" target="_blank" rel="noopener">Freesound</a></td>
+              <td><code>FREESOUND_API_KEY</code> <em>(optional)</em></td>
+              <td>Large community sound library</td>
+            </tr>
+            <tr>
+              <td>4️⃣ Fallback</td>
+              <td>Silence Generator</td>
+              <td><span class="free-badge">None needed</span></td>
+              <td>Always succeeds — guarantees an audio track</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top:1rem; font-size:0.88rem; color:var(--text-secondary);">
+          💡 <strong>Tip:</strong> Add the optional secrets below to unlock higher-quality music sources.
+          If none are configured, the pipeline still works using Free Music Archive and the silence fallback.
+        </p>
+        <div class="token-box" style="margin-top:0.75rem;">
+          <label>Optional music secrets (add to GitHub Secrets → Actions)</label>
+          <pre>PIXABAY_API_KEY     → Free at <a href="https://pixabay.com/api/docs/" target="_blank" rel="noopener" style="color:var(--accent-light)">pixabay.com/api/docs</a>
+FREESOUND_API_KEY   → Free at <a href="https://freesound.org/apiv2/apply/" target="_blank" rel="noopener" style="color:var(--accent-light)">freesound.org/apiv2/apply</a></pre>
+        </div>
+      </div>
     </div>
 
     <!-- Status Dashboard -->

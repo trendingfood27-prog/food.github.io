@@ -111,7 +111,10 @@ class TestGetMusicForScenes(unittest.TestCase):
         fake_silence_path = Path("/tmp/cache/testkey_silence.wav")
         with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
              patch.object(self.ms.config, "FREESOUND_API_KEY", None), \
+             patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache_empty"), \
+             patch("src.music_selector._download_from_free_music_archive",
+                   return_value=None), \
              patch("src.music_selector._create_silence_fallback",
                    return_value=fake_silence_path) as mock_silence, \
              patch("src.music_selector.Path") as mock_path_cls:
@@ -138,10 +141,15 @@ class TestGetMusicForScenes(unittest.TestCase):
         self.assertEqual(result, fake_cached_path)
 
     def test_calls_freesound_download_when_api_key_set(self):
-        """When FREESOUND_API_KEY is present and cache is empty, Freesound is queried."""
+        """When FREESOUND_API_KEY is present and all higher-priority sources fail, Freesound is queried."""
         with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
              patch.object(self.ms.config, "FREESOUND_API_KEY", "test_key"), \
+             patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache"), \
+             patch("src.music_selector._download_from_pixabay",
+                   return_value=None), \
+             patch("src.music_selector._download_from_free_music_archive",
+                   return_value=None), \
              patch("src.music_selector._download_from_freesound",
                    return_value=None) as mock_dl, \
              patch("src.music_selector.Path") as mock_path_cls:
@@ -157,7 +165,10 @@ class TestGetMusicForScenes(unittest.TestCase):
         fake_music_path = Path("/tmp/cache/xyz_789.mp3")
         with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
              patch.object(self.ms.config, "FREESOUND_API_KEY", "test_key"), \
+             patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache"), \
+             patch("src.music_selector._download_from_pixabay", return_value=None), \
+             patch("src.music_selector._download_from_free_music_archive", return_value=None), \
              patch("src.music_selector._download_from_freesound",
                    return_value=fake_music_path), \
              patch("src.music_selector.Path") as mock_path_cls:
@@ -172,7 +183,10 @@ class TestGetMusicForScenes(unittest.TestCase):
         """An empty scene list should not raise an exception."""
         with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
              patch.object(self.ms.config, "FREESOUND_API_KEY", None), \
+             patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache"), \
+             patch("src.music_selector._download_from_free_music_archive",
+                   return_value=None), \
              patch("src.music_selector.Path") as mock_path_cls:
             mock_dir = MagicMock()
             mock_dir.glob.return_value = []
@@ -182,10 +196,12 @@ class TestGetMusicForScenes(unittest.TestCase):
         self.assertIsNotNone(result)
 
     def test_returns_none_when_all_music_sources_fail(self):
-        """When Freesound is unavailable and silence fallback also fails, returns None."""
+        """When all sources are unavailable and silence fallback also fails, returns None."""
         with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
              patch.object(self.ms.config, "FREESOUND_API_KEY", None), \
+             patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache_empty"), \
+             patch("src.music_selector._download_from_free_music_archive", return_value=None), \
              patch("src.music_selector._create_silence_fallback", return_value=None), \
              patch("src.music_selector.Path") as mock_path_cls:
             mock_dir = MagicMock()
@@ -325,6 +341,122 @@ class TestCreateSilenceFallback(unittest.TestCase):
                 self.assertEqual(wf.getnchannels(), 1)
                 self.assertEqual(wf.getsampwidth(), 2)
                 self.assertGreater(wf.getnframes(), 0)
+
+
+class TestDownloadFromPixabay(unittest.TestCase):
+    """Tests for music_selector._download_from_pixabay()."""
+
+    def setUp(self):
+        import src.music_selector as ms
+        self.ms = ms
+
+    def test_returns_none_without_api_key(self):
+        with patch.object(self.ms.config, "PIXABAY_API_KEY", None):
+            result = self.ms._download_from_pixabay(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+    def test_returns_none_on_api_error(self):
+        with patch.object(self.ms.config, "PIXABAY_API_KEY", "test_key"), \
+             patch("src.music_selector.requests.get",
+                   side_effect=Exception("network error")):
+            result = self.ms._download_from_pixabay(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+    def test_returns_none_when_no_hits(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"hits": []}
+        mock_resp.raise_for_status.return_value = None
+        with patch.object(self.ms.config, "PIXABAY_API_KEY", "test_key"), \
+             patch("src.music_selector.requests.get", return_value=mock_resp):
+            result = self.ms._download_from_pixabay(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+    def test_returns_none_when_no_audio_url(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "hits": [{"id": 1, "pageURL": "https://pixabay.com/music/1"}]
+        }
+        mock_resp.raise_for_status.return_value = None
+        with patch.object(self.ms.config, "PIXABAY_API_KEY", "test_key"), \
+             patch("src.music_selector.requests.get", return_value=mock_resp):
+            result = self.ms._download_from_pixabay(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+
+class TestDownloadFromFreeMusicArchive(unittest.TestCase):
+    """Tests for music_selector._download_from_free_music_archive()."""
+
+    def setUp(self):
+        import src.music_selector as ms
+        self.ms = ms
+
+    def test_returns_none_on_api_error(self):
+        with patch("src.music_selector.requests.get",
+                   side_effect=Exception("network error")):
+            result = self.ms._download_from_free_music_archive(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+    def test_returns_none_when_no_tracks(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"aTracks": []}
+        mock_resp.raise_for_status.return_value = None
+        with patch("src.music_selector.requests.get", return_value=mock_resp):
+            result = self.ms._download_from_free_music_archive(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+    def test_returns_none_when_no_download_url(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "aTracks": [{"track_id": "1", "track_title": "Test Track"}]
+        }
+        mock_resp.raise_for_status.return_value = None
+        with patch("src.music_selector.requests.get", return_value=mock_resp):
+            result = self.ms._download_from_free_music_archive(
+                "test query", Path("/tmp"), "cachekey"
+            )
+        self.assertIsNone(result)
+
+    def test_downloads_track_and_returns_path(self):
+        """When a valid track_file URL is present, the file is downloaded."""
+        search_resp = MagicMock()
+        search_resp.raise_for_status.return_value = None
+        search_resp.json.return_value = {
+            "aTracks": [{
+                "track_id": "99",
+                "track_title": "Cooking Groove",
+                "track_file": "https://files.freemusicarchive.org/99.mp3",
+            }]
+        }
+
+        download_resp = MagicMock()
+        download_resp.raise_for_status.return_value = None
+        download_resp.iter_content.return_value = [b"fake_mp3_data"]
+        download_resp.__enter__ = MagicMock(return_value=download_resp)
+        download_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("src.music_selector.requests.get",
+                   side_effect=[search_resp, download_resp]), \
+             patch("builtins.open", unittest.mock.mock_open()) as mock_file:
+            cache_dir = MagicMock(spec=Path)
+            cache_dir.__truediv__ = MagicMock(
+                return_value=Path("/tmp/cachekey_fma_99.mp3")
+            )
+            result = self.ms._download_from_free_music_archive(
+                "cooking groove", cache_dir, "cachekey"
+            )
+        self.assertIsNotNone(result)
 
 
 if __name__ == "__main__":

@@ -2,11 +2,14 @@
 music_selector.py — Scene-aware background music selection for the Food Making Videos Factory.
 
 Classifies scenes by type (intro / middle / punchline) and downloads royalty-free
-background music from free sources:
+background music from free sources using a multi-source fallback chain:
 
-  1. Freesound API  — requires ``FREESOUND_API_KEY`` (free registration at freesound.org/apiv2/apply/).
-  2. Local silence fallback — generates a short silent WAV file so the pipeline always
-     has an audio track without requiring any API key or network access.
+  1. Pixabay Music API — requires ``PIXABAY_API_KEY`` (free registration at pixabay.com).
+  2. Free Music Archive API — no API key required; Creative Commons licensed tracks.
+  3. Freesound API    — optional; requires ``FREESOUND_API_KEY`` (free registration at
+                        freesound.org/apiv2/apply/).
+  4. Local silence fallback — generates a short silent WAV file so the pipeline always
+                              has an audio track without requiring any API key or network access.
 
 Downloaded tracks are cached locally under ``MUSIC_CACHE_DIR`` to avoid redundant
 API calls across pipeline runs.
@@ -45,6 +48,8 @@ _SCENE_MOOD_MAP: dict[str, list[str]] = {
 }
 
 _FREESOUND_SEARCH_URL = "https://freesound.org/apiv2/search/text/"
+_PIXABAY_API_URL = "https://pixabay.com/api/"
+_FMA_API_URL = "https://freemusicarchive.org/api/get/tracks.json"
 
 
 # ---------------------------------------------------------------------------
@@ -95,16 +100,22 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
     """Select and download background music suitable for the given video scenes.
 
     Determines the dominant scene type from the scene list and searches
-    Freesound for a matching royalty-free track.  Previously downloaded
+    multiple free music sources in priority order.  Previously downloaded
     tracks are served from the local cache to minimise API usage.
+
+    Fallback chain (in order):
+      1. Pixabay Music API (requires ``PIXABAY_API_KEY``)
+      2. Free Music Archive API (no API key required)
+      3. Freesound API (requires ``FREESOUND_API_KEY``)
+      4. Local silence generator (always succeeds)
 
     Args:
         scenes: List of scene description strings from script generation.
         topic:  The food topic being covered (used to refine the search).
 
     Returns:
-        Path to the downloaded MP3 file, or ``None`` if music is
-        unavailable (no API key, API error, or music disabled in config).
+        Path to the downloaded audio file, or ``None`` if music is
+        unavailable (music disabled in config or all fallbacks fail).
     """
     if not getattr(config, "MUSIC_ENABLED", True):
         logger.info("Background music disabled via MUSIC_ENABLED config")
@@ -131,17 +142,27 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
         logger.info("Using cached background music: %s", cached[0])
         return cached[0]
 
-    # Try Freesound as the primary free music source
-    music_path = _download_from_freesound(search_query, cache_dir, cache_key)
-    if music_path:
-        return music_path
+    # --- Fallback chain (respects MUSIC_SOURCE_PRIORITY order) ---
+    source_priority = getattr(config, "MUSIC_SOURCE_PRIORITY",
+                              ["pixabay", "free_music_archive", "freesound", "silence"])
 
-    # Fall back to a locally generated silent audio track so the pipeline
-    # always has a music path and never drops to TTS-only mode.
-    silence_path = _create_silence_fallback(cache_dir, cache_key)
-    if silence_path:
-        logger.info("Using silence fallback — no API music available")
-        return silence_path
+    _source_handlers = {
+        "pixabay": lambda: _download_from_pixabay(search_query, cache_dir, cache_key),
+        "free_music_archive": lambda: _download_from_free_music_archive(search_query, cache_dir, cache_key),
+        "freesound": lambda: _download_from_freesound(search_query, cache_dir, cache_key),
+        "silence": lambda: _create_silence_fallback(cache_dir, cache_key),
+    }
+
+    for source in source_priority:
+        handler = _source_handlers.get(source)
+        if handler is None:
+            logger.warning("Unknown music source '%s' in MUSIC_SOURCE_PRIORITY — skipping", source)
+            continue
+        result = handler()
+        if result:
+            if source == "silence":
+                logger.info("Using silence fallback — no API music available")
+            return result
 
     logger.warning("No background music sourced — video will use TTS narration only")
     return None
@@ -150,6 +171,131 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+def _download_from_pixabay(query: str, cache_dir: Path, cache_key: str) -> Path | None:
+    """Search Pixabay for background music and download the best match.
+
+    Requires ``PIXABAY_API_KEY`` to be set in the environment.
+    Queries Pixabay's audio endpoint and downloads the first available track.
+
+    Args:
+        query:     Search query string.
+        cache_dir: Directory to save the downloaded file.
+        cache_key: Short hash used as part of the cached filename.
+
+    Returns:
+        Path to the downloaded MP3, or ``None`` on any failure.
+    """
+    api_key = getattr(config, "PIXABAY_API_KEY", None)
+    if not api_key:
+        logger.debug("PIXABAY_API_KEY not configured — skipping Pixabay music search")
+        return None
+
+    try:
+        resp = requests.get(
+            _PIXABAY_API_URL,
+            params={
+                "key": api_key,
+                "q": query,
+                "media_type": "music",
+                "per_page": 5,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        hits = resp.json().get("hits", [])
+
+        if not hits:
+            logger.debug("Pixabay returned no music results for query '%s'", query)
+            return None
+
+        for hit in hits:
+            audio_url = hit.get("audio")
+            if not audio_url or not audio_url.endswith(".mp3"):
+                continue
+
+            track_id = hit.get("id", "unknown")
+            out_path = cache_dir / f"{cache_key}_pixabay_{track_id}.mp3"
+
+            try:
+                with requests.get(audio_url, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    with open(out_path, "wb") as fh:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            fh.write(chunk)
+                logger.info(
+                    "Downloaded Pixabay background music (id=%s) → %s", track_id, out_path
+                )
+                return out_path
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to download Pixabay track id=%s: %s", track_id, exc)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Pixabay music search failed for query '%s': %s", query, exc)
+
+    return None
+
+
+def _download_from_free_music_archive(query: str, cache_dir: Path, cache_key: str) -> Path | None:
+    """Search the Free Music Archive for Creative Commons background music.
+
+    No API key is required.  Downloads the first available track whose
+    download URL is exposed by the API.
+
+    Args:
+        query:     Search query string.
+        cache_dir: Directory to save the downloaded file.
+        cache_key: Short hash used as part of the cached filename.
+
+    Returns:
+        Path to the downloaded MP3, or ``None`` on any failure.
+    """
+    try:
+        resp = requests.get(
+            _FMA_API_URL,
+            params={
+                "q": query,
+                "limit": 5,
+                "sort": "track_date_published",
+                "order": "desc",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        tracks = resp.json().get("aTracks", [])
+
+        if not tracks:
+            logger.debug("Free Music Archive returned no results for query '%s'", query)
+            return None
+
+        for track in tracks:
+            download_url = track.get("track_file") or track.get("track_url")
+            if not download_url:
+                continue
+
+            track_id = track.get("track_id", "unknown")
+            out_path = cache_dir / f"{cache_key}_fma_{track_id}.mp3"
+
+            try:
+                with requests.get(download_url, stream=True, timeout=30) as r:
+                    r.raise_for_status()
+                    with open(out_path, "wb") as fh:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            fh.write(chunk)
+                logger.info(
+                    "Downloaded Free Music Archive track '%s' (id=%s) → %s",
+                    track.get("track_title", track_id), track_id, out_path,
+                )
+                return out_path
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to download FMA track id=%s: %s", track_id, exc)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Free Music Archive search failed for query '%s': %s", query, exc)
+
+    return None
+
+
 
 def _download_from_freesound(query: str, cache_dir: Path, cache_key: str) -> Path | None:
     """Search Freesound for background music and download the best match.
