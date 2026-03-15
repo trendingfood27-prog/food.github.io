@@ -1,18 +1,28 @@
 """
-scriptwriter.py — Comedy Animation Script Generator for the Funny Animation Shorts Factory.
+scriptwriter.py — AI-Powered Food Script Generator for the Food Making Videos Factory.
 
-Uses deterministic templates with topic-aware variations to produce structured
-scripts complete with title, narration, scene descriptions, tags, and a
-YouTube description.  Designed to generate hilarious, animated-style comedy
-content — no paid API keys required.
+Generates professional, engaging food-making scripts via the OpenRouter AI API
+(https://openrouter.ai).  Falls back to high-quality template-based generation
+when the API key is unavailable, ensuring the pipeline always produces output.
+
+Scripts include:
+- Viral hooks designed for the first 3-5 seconds (curiosity gaps, pattern interrupts)
+- Professional step-by-step food narration with personality
+- Strategically placed CTAs at 25%, 50%, 75%, and 95% of the script
+- Food-specific tags (15-30) optimised for cooking/recipe YouTube searches
+- SEO-friendly descriptions with keyword placement
 """
 
 import hashlib
+import json
 import logging
+import os
 import random
 import re
 import time
-from typing import TypedDict
+from typing import Any, TypedDict
+
+import config
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +32,7 @@ _MAX_WORDS = 200
 
 
 class ScriptData(TypedDict):
-    """Structured output from the comedy script generator."""
+    """Structured output from the food script generator."""
 
     title: str
     script: str
@@ -34,342 +44,294 @@ class ScriptData(TypedDict):
 
 
 # ---------------------------------------------------------------------------
-# Comedy Hook Templates — first 3-5 seconds that hook viewers with absurd/funny premises
+# Food Hook Templates — attention-grabbing intros for the first 3-5 seconds
 # ---------------------------------------------------------------------------
 _HOOKS: list[str] = [
-    # Absurd premise hooks
-    "What if {topic} was actually run by a council of angry cats?",
-    "POV: You explained {topic} to your grandma and she started a business.",
-    "Nobody: ... Absolutely Nobody: ... {topic}: chaos ensues.",
-    "{topic} but it is explained by two neurons fighting in your brain.",
-    "Me trying to understand {topic} at 3 AM be like...",
-    "If {topic} was a cartoon character, this is exactly what would happen.",
-    "Plot twist: {topic} has been a raccoon in a trenchcoat this whole time.",
-    "Your brain at 3 AM: What if {topic} was actually a soap opera?",
-    "The universe explaining {topic} to you using only emojis and chaos.",
-    "When {topic} walks into the room like it owns the place.",
-    # Gen-Z / meme culture hooks
-    "POV: {topic} just sent you a passive-aggressive text.",
-    "Me explaining {topic} to my goldfish who has a three-second memory.",
-    "Sir, this is a Wendy's — and {topic} just ordered everything on the menu.",
-    "Main character energy: {topic} edition. Buckle up.",
-    "The villain origin story of {topic} — no one saw this coming.",
-    "Not me thinking about {topic} again at the worst possible time.",
-    "{topic} said hold my juice box and then absolutely went feral.",
-    "Every explanation of {topic} ever, but make it unhinged.",
-    "The last two brain cells trying to process {topic} together.",
-    "Okay but what if {topic} had feelings? Because it clearly does.",
-    # Situational comedy hooks
-    "How it started vs how it is going with {topic}.",
-    "If {topic} was a job interview, and everyone was lying.",
-    "First day vs last day of understanding {topic}.",
-    "Things {topic} does when no one is watching.",
-    "{topic} explained by someone who has absolutely no idea what it is.",
-    "The five stages of grief when you finally understand {topic}.",
-    "A documentary about {topic} narrated by someone who misread Wikipedia.",
-    "If {topic} had a customer service hotline, here is how it would go.",
-    "The internal monologue of someone encountering {topic} for the first time.",
-    # Time / perspective comedy hooks
-    "If someone from 2050 came back to explain {topic} to us right now.",
-    "Medieval knight reacting to {topic} for the first time.",
-    "Your future self calling to warn you about {topic} at two in the morning.",
-    "{topic} — a horror story, a love story, and a cooking show all at once.",
-    "Breaking news: {topic} has gone completely off the rails and we are here for it.",
+    # Curiosity gap hooks
+    "This one trick will make your {topic} taste like it came from a five-star restaurant.",
+    "Wait until you see what happens when you add this one secret ingredient to your {topic}.",
+    "Chefs have been hiding this {topic} technique for years — until now.",
+    "You have been making {topic} wrong your entire life and here is the proof.",
+    "I cannot believe how easy it is to make restaurant-quality {topic} at home.",
+    "The reason your {topic} never tastes as good as the restaurant version finally explained.",
+    "Stop wasting money at restaurants — this {topic} recipe changes everything.",
+    "Nobody told me that {topic} could be this simple until I found this technique.",
+    # Pattern interrupt hooks
+    "Forget everything you know about making {topic} — this method is completely different.",
+    "Three ingredients. Ten minutes. The most incredible {topic} you have ever tasted.",
+    "What if I told you that the secret to perfect {topic} is already in your kitchen right now.",
+    "Your grandma was right about {topic} and here is the science that proves it.",
+    "The most viral {topic} recipe on the internet and I finally understand why.",
+    "I tried every method and this is the only {topic} technique that actually works.",
+    # Emotional trigger hooks
+    "This {topic} recipe will make your family think you went to culinary school.",
+    "The {topic} recipe that made my guests think I hired a personal chef.",
+    "If comfort food had a name it would be this {topic} recipe right here.",
+    "Making {topic} at home is so much better than ordering it — and I will prove it.",
+    "This is the {topic} recipe I wish someone had taught me ten years ago.",
+    "Once you try this {topic} method you will never go back to the old way.",
+    # How-to viral hooks
+    "Here is the fastest way to make perfect {topic} every single time.",
+    "Five minutes and five ingredients are all you need for this incredible {topic}.",
+    "The one step everyone skips that makes {topic} taste infinitely better.",
+    "How professional chefs make {topic} and why it always tastes so much better.",
+    "The science behind why this {topic} technique works better than everything else.",
+    # Number-based viral hooks
+    "Five ingredients, zero cooking skills needed, perfect {topic} every time.",
+    "Three common mistakes that are ruining your {topic} and how to fix them right now.",
+    "Ten seconds of prep time changes your {topic} from good to absolutely incredible.",
+    "The two-ingredient upgrade that makes any {topic} taste gourmet instantly.",
+    "Only four steps stand between you and the best {topic} you have ever made.",
 ]
 
 # ---------------------------------------------------------------------------
-# Body Templates — several comedy patterns
+# Food Script Body Templates
 # ---------------------------------------------------------------------------
 
-# Pattern 1: Character Dialogue — two funny characters debating the topic
-_BODIES_DIALOGUE: list[str] = [
-    (
-        "Imagine two stick figures arguing about this. Stick Figure One says: "
-        "Okay so {topic} is basically the universe trolling us. Stick Figure Two "
-        "replies: That tracks. That absolutely tracks. Meanwhile their tiny laptop "
-        "is on fire and papers are flying everywhere because nobody read the manual. "
-        "The manual, it turns out, was just a drawing of a confused cat. Classic "
-        "{topic} behaviour if you ask me."
-    ),
-    (
-        "Picture two chibi characters standing in front of a whiteboard covered in "
-        "question marks. Character One points dramatically and yells: {topic} is "
-        "the reason I cannot sleep at night. Character Two nods so hard their "
-        "oversized head wobbles like a bobblehead. They both stare into the camera "
-        "with the same energy as someone who just watched a documentary that raised "
-        "more questions than it answered. Because it did."
-    ),
-    (
-        "Two blob characters are having a very important meeting about {topic}. "
-        "Blob One slaps the table and announces: I have done zero research but I "
-        "have very strong feelings. Blob Two pulls out a single crumpled sticky "
-        "note that just says the word yes in giant letters. They high-five and "
-        "declare the meeting a success. This is genuinely how most decisions about "
-        "{topic} get made and nobody is talking about it."
-    ),
-    (
-        "The neurons in your brain have called an emergency summit about {topic}. "
-        "Neuron One enters wearing a tiny tie and carrying a briefcase that is "
-        "entirely empty. Neuron Two has printed forty slides and the printer ran "
-        "out of ink on slide three. Together they represent the full intellectual "
-        "capacity being deployed on {topic} right now. The meeting ends with a "
-        "fire alarm and everyone just agrees to wing it."
-    ),
-]
-
-# Pattern 2: Narrator + Chaos — calm narrator while animated chaos happens
-_BODIES_NARRATOR: list[str] = [
-    (
-        "Narrator voice calm and serene: Today we observe {topic} in its natural "
-        "habitat. A small cartoon character approaches cautiously. Everything seems "
-        "fine. The narrator continues: Note how it appears perfectly normal and "
-        "harmless. Suddenly three explosions happen simultaneously for no reason. "
-        "A rubber hose cartoon runs in circles screaming while a disco ball drops "
-        "from the ceiling. The narrator, completely unfazed, adds: This is typical "
-        "{topic} behaviour. Scientists are baffled. Audiences are delighted."
-    ),
-    (
-        "Welcome to the nature documentary nobody asked for but everyone needed. "
-        "Today: {topic}. Our subject has been spotted in the wild. The pixel art "
-        "sprite is moving with suspicious confidence toward something labeled "
-        "do not touch. The narrator whispers dramatically: It is going to touch it. "
-        "It touches it. Chaos erupts. A tiny cartoon dog somewhere in the background "
-        "is just vibing with sunglasses on. He knows. He always knew."
-    ),
-    (
-        "And now a message from your brain regarding {topic}. Everything is fine. "
-        "The cartoon brain sits at a tiny desk surrounded by filing cabinets that "
-        "are all labeled urgent and also on fire. This is fine says the brain, "
-        "pouring coffee into a mug that says I function. Meanwhile {topic} enters "
-        "the scene with a kazoo and immediately starts reorganizing the filing "
-        "system using a method described only as vibes. The brain gives a thumbs up."
-    ),
-]
-
-# Pattern 3: Tutorial Gone Wrong — how-to that goes hilariously off the rails
+# Pattern 1: Step-by-step tutorial with personality
 _BODIES_TUTORIAL: list[str] = [
     (
-        "Step one: simply understand {topic}. Easy. You have got this. Step two: "
-        "do a little research. The little research has become a six-hour spiral "
-        "and a chibi character is now surrounded by seventeen open browser tabs. "
-        "Step three: apply what you learned. Apply key smashes the keyboard. "
-        "Step four: accept the results. The result is a rubber hose cartoon doing "
-        "a victory dance in the wreckage of your original plan. Step five: become "
-        "one with {topic}. You are {topic} now. This was always the plan."
+        "Here is everything you need to know. Start with the freshest ingredients "
+        "you can find — this is non-negotiable for {topic} because quality goes "
+        "directly from your ingredients to your plate. The first step most people "
+        "skip is proper prep, and this is where all the flavor magic actually "
+        "happens. Take your time here. Now for the technique that changes "
+        "everything: high heat, patience, and the right seasoning at the right "
+        "moment. Professional chefs know that timing is the real secret ingredient. "
+        "And here is the final touch that elevates {topic} from good to "
+        "restaurant-worthy — do not skip this step, it takes thirty seconds and "
+        "makes all the difference. Hit like if this helped."
     ),
     (
-        "A complete beginner guide to {topic} in under a minute. First: act "
-        "confident even if you have no idea what is happening. The stick figure "
-        "nods aggressively. Second: say the words as if they explain themselves. "
-        "Third: when someone asks a follow-up question, point enthusiastically "
-        "at the nearest wall and say exactly. Fourth: realize {topic} is actually "
-        "fascinating and spiral into genuine interest at three in the morning. "
-        "Fifth: become the person everyone calls about {topic} at parties. "
-        "Congratulations. You are now an expert. Sort of."
-    ),
-]
-
-# Pattern 4: Inner Monologue — character's inner thoughts vs reality
-_BODIES_MONOLOGUE: list[str] = [
-    (
-        "What they say about {topic}: perfectly simple and straightforward. "
-        "What your brain hears: an ancient prophecy written in a language "
-        "only confused squirrels can read. What you say out loud: yes, totally, "
-        "I get it. What you are actually thinking: why is there a tiny cartoon "
-        "version of me inside my own head doing panicked cartwheels. What happens "
-        "next: you google it, find three answers that all contradict each other, "
-        "and the chibi character in your brain sits down on the floor and eats "
-        "a snack and decides to nap on it instead."
-    ),
-    (
-        "The confident face you make when someone mentions {topic}: smooth, "
-        "knowledgeable, a hint of been there. What is actually happening inside: "
-        "a full cartoon orchestra is tuning instruments but nobody brought the "
-        "sheet music. The conductor, a tiny blob character in a tuxedo, looks "
-        "directly into the audience and shrugs with his entire body. This is fine. "
-        "You nod along. You say interesting. You pull out your phone the second "
-        "the conversation ends and search what is {topic} actually and why is it "
-        "like that. You were right to ask."
+        "Making perfect {topic} at home is easier than you think. Step one is "
+        "all about building your flavor base — this is where most home cooks "
+        "lose the plot, so pay attention here. The key is low and slow at this "
+        "stage; rushing it gives you flat, one-dimensional flavor. Step two is "
+        "the technique that separates good cooks from great ones: proper "
+        "temperature control and knowing when to add each ingredient. Step three "
+        "is the secret finishing technique that restaurant chefs use every single "
+        "time. Your {topic} is about to go from ordinary to extraordinary. "
+        "Subscribe for more pro kitchen techniques."
     ),
 ]
 
-# Pattern 5: News Anchor — fake news broadcast with ridiculous takes
-_BODIES_NEWS: list[str] = [
+# Pattern 2: Secret reveal with curiosity gap
+_BODIES_REVEAL: list[str] = [
     (
-        "Breaking news from the cartoon dimension. I am your anchor reporting "
-        "live from a desk that is inexplicably floating. Our top story: {topic} "
-        "has done something again and the people are divided. Sources describe "
-        "the situation as unprecedented, chaotic, and honestly kind of hilarious. "
-        "Our correspondent, a stick figure with a notepad full of question marks, "
-        "reports from the scene. Back to you. We do not know what is back to you "
-        "means anymore. More updates as this develops, which it will, immediately."
+        "Here is the secret that changed everything for me. Most people think "
+        "{topic} is complicated but the truth is there is one technique that "
+        "simplifies the entire process. The ingredient you are probably skipping "
+        "is the difference between something that tastes okay and something that "
+        "makes people ask for the recipe. Professional kitchens use this method "
+        "because it locks in flavor while saving time — a double win. The moment "
+        "you taste {topic} made this way you will understand why restaurant food "
+        "always hits differently. Comment below with your results because I want "
+        "to see how yours turns out."
     ),
     (
-        "This just in. {topic} has entered the chat and the chat is not ready. "
-        "A panel of animated experts featuring a nervous chibi, a confident blob, "
-        "and one rubber hose character who has already started celebrating for no "
-        "reason are discussing the implications. The chibi says: this is significant. "
-        "The blob says: I made a chart. The chart is a drawing of a confused cat. "
-        "We are all the confused cat at this point. Weather report: chaotic with "
-        "a high chance of plot twist. Stay tuned."
+        "I tested twelve different methods for making {topic} and the winner "
+        "surprised even me. The conventional way that most recipes teach you "
+        "actually works against the natural chemistry of the ingredients. Here "
+        "is what actually happens at the molecular level when you cook {topic} "
+        "correctly: the proteins interact differently, the flavors develop in "
+        "layers rather than all at once, and the texture ends up completely "
+        "different. This is not food science trivia — it directly affects how "
+        "your {topic} tastes. Once you understand this you will apply it to "
+        "every dish you make. Share this with someone who loves cooking."
     ),
 ]
 
-# Pattern 6: Time Travel — future or past perspective
-_BODIES_TIME: list[str] = [
+# Pattern 3: Problem-solution with before/after narrative
+_BODIES_PROBLEM_SOLUTION: list[str] = [
     (
-        "Imagine someone from 2050 beaming back to explain {topic} to us. They "
-        "appear in a flash of light, pixel art shimmer included. They look around "
-        "at how we currently understand {topic} and immediately start stress-eating "
-        "a holographic sandwich. Future person breathes deeply and says: okay so "
-        "first of all. They do not finish the sentence. They just start drawing "
-        "diagrams in the air with increasing urgency while a chibi time police "
-        "officer in the background is frantically waving at them to stop. Too late."
+        "If your {topic} never comes out right this is exactly why. The most "
+        "common mistake is rushing the process, which means the ingredients "
+        "never have time to develop the depth of flavor you are looking for. "
+        "The second mistake is the wrong heat — either too high and you burn "
+        "the outside before the inside cooks, or too low and you steam instead "
+        "of sear. The third mistake, and this one is controversial, is adding "
+        "the wrong ingredients at the wrong time. Fix these three things and "
+        "your {topic} will transform completely. Follow for more cooking fixes "
+        "that actually work."
     ),
     (
-        "A medieval knight has just encountered {topic} for the first time. "
-        "The knight, drawn in the most dramatic rubber hose cartoon style possible, "
-        "does a full body recoil that sends their armour flying in five directions. "
-        "They consult their scroll. The scroll is blank. They consult their wizard. "
-        "The wizard is also blank. The knight turns to the camera and says in a "
-        "very serious voice: yonder topic doth go completely off the rails and yet "
-        "I am here for it. The wizard nods slowly. The armour is still in orbit."
+        "Why does {topic} from a restaurant always taste better than when you "
+        "make it at home? The answer is not a secret expensive ingredient or "
+        "professional equipment. It comes down to three things: temperature "
+        "management, the right fat, and timing. Restaurants do not rush these "
+        "steps. They also do something at the end that most home recipes do not "
+        "tell you about, and that finishing touch is everything. Try it once "
+        "the right way and the difference will genuinely shock you. Like and "
+        "save this video so you can come back to it when you cook."
+    ),
+]
+
+# Pattern 4: Comparison and hack format
+_BODIES_HACK: list[str] = [
+    (
+        "Here is the {topic} hack that took me from a mediocre home cook to "
+        "someone my whole family now asks to make dinner for special occasions. "
+        "The upgrade costs nothing extra and uses something already in your "
+        "pantry. Step one changes the prep process entirely. Step two is the "
+        "heat trick that professional cooks swear by. Step three is the garnish "
+        "and plating technique that makes any {topic} look like it belongs on "
+        "a tasting menu. Your plate, your rules — but trust me on these three "
+        "steps. Tag someone who needs to see this."
+    ),
+    (
+        "Five-dollar ingredient, ten-minute prep, result that looks like you "
+        "spent fifty dollars on a restaurant meal. That is the {topic} hack I "
+        "am about to show you. The key insight is that most of what makes "
+        "restaurant food taste expensive is technique, not cost. The specific "
+        "technique for {topic} that restaurants use and home cooks ignore "
+        "involves building flavor in layers rather than all at once. It sounds "
+        "simple because it is — once you know it. Subscribe and save this "
+        "because you will want to make {topic} this way every single time."
     ),
 ]
 
 # Combine all body patterns
 _ALL_BODIES: list[str] = (
-    _BODIES_DIALOGUE
-    + _BODIES_NARRATOR
-    + _BODIES_TUTORIAL
-    + _BODIES_MONOLOGUE
-    + _BODIES_NEWS
-    + _BODIES_TIME
+    _BODIES_TUTORIAL
+    + _BODIES_REVEAL
+    + _BODIES_PROBLEM_SOLUTION
+    + _BODIES_HACK
 )
 
 # ---------------------------------------------------------------------------
-# Punchline / CTA Templates
+# CTA Templates — placed strategically throughout the script
 # ---------------------------------------------------------------------------
-_PUNCHLINES: list[str] = [
-    "If this made your brain hurt in a funny way, smash that subscribe button!",
-    "Plot twist: you just learned something AND laughed. Subscribe for more chaos!",
-    "Your humor taste is immaculate. Subscribe before the algorithm forgets you!",
-    "And that is {topic} explained by your last remaining brain cell. Follow for more.",
-    "Subscribe or the confused cat gets the chart. You have been warned.",
-    "If you laughed even once, the cartoon characters win. Subscribe to confirm their victory.",
-    "Follow for daily animation chaos that somehow makes sense in the end.",
-    "Subscribe now and I promise the next one gets even more unhinged.",
-    "The stick figures worked hard on this. Reward them with a follow.",
-    "That is all from the cartoon dimension today. Subscribe for tomorrow's episode.",
-    "Your neurons called. They want more content like this. Subscribe and tell them you did.",
+_CTA_EARLY: list[str] = [  # ~25% mark — like CTA
+    "Hit like if this is already blowing your mind.",
+    "Tap the like button if you are taking notes right now.",
+    "Give this a like — this technique deserves it.",
+]
+_CTA_MID: list[str] = [  # ~50% mark — subscribe CTA
+    "Subscribe so you never miss a recipe like this.",
+    "Follow for more professional kitchen secrets like this one.",
+    "Subscribe because there is so much more where this came from.",
+]
+_CTA_LATE: list[str] = [  # ~75% mark — comment CTA
+    "Comment below what dish you want me to master next.",
+    "Let me know in the comments if you tried this technique.",
+    "Drop a comment with your results — I read every single one.",
+]
+_PUNCHLINES: list[str] = [  # Near end — share CTA
+    "Share this with someone who loves food as much as you do and follow for daily recipes.",
+    "Save this video and share it — you are going to want to come back to this recipe.",
+    "Follow for more recipes that change how you cook forever, and share this with your foodie friends.",
+    "Tag the person you are going to cook this for and subscribe for more food secrets.",
+    "Share this with someone who thinks cooking is too complicated — this proves otherwise.",
 ]
 
 # ---------------------------------------------------------------------------
-# Comedy Title Templates
+# Food-focused Title Templates
 # ---------------------------------------------------------------------------
 _TITLES: list[str] = [
-    "When {topic} Goes HILARIOUSLY Wrong \U0001f602\U0001f480",
-    "{topic} But Make It UNHINGED \U0001f923",
-    "POV: {topic} Explained By Your Last Brain Cell",
-    "If {topic} Was a Cartoon Character \U0001f62d\U0001f525",
-    "{topic} And The Two Neurons Fighting About It \U0001f9e0\U0001f4a5",
-    "Nobody Expected {topic} To Be This Chaotic \U0001f631",
-    "{topic} Walked So The Chaos Could Run \U0001f480",
-    "Me Explaining {topic} To My Goldfish \U0001f41f\U0001f602",
-    "The {topic} Documentary Nobody Asked For \U0001f3ac",
-    "{topic}: A Horror Story But Make It Funny \U0001f631\U0001f923",
-    "When {topic} Has Main Character Energy \U0001f525",
-    "{topic} Has Done It Again And We Are ALL The Confused Cat \U0001f408",
-    "Your Brain At 3 AM: Okay But What About {topic} \U0001f62d",
-    "Sir This Is A Wendy's And {topic} Just Ordered Everything \U0001f602",
-    "{topic} In The Wild: A Nature Documentary \U0001f40d\U0001f4f9",
-    "The Last Two Brain Cells Processing {topic} Right Now \U0001f9e0\U0001f923",
-    "{topic} Explained With Zero Chill And Maximum Chaos \U0001f4a5",
-    "Plot Twist: {topic} Was A Raccoon In A Trenchcoat \U0001f99d\U0001f602",
-    "How It Started Vs How It Is Going: {topic} Edition \U0001f480\U0001f525",
-    "Breaking News: {topic} Has Gone Completely Off The Rails \U0001f6a8\U0001f602",
+    "The Secret to Perfect {topic} Nobody Is Talking About \U0001f373",
+    "Why Your {topic} Never Tastes Right (And How To Fix It) \U0001f525",
+    "5-Minute {topic} That Tastes Like A Restaurant Made It \u2764\ufe0f",
+    "I Tested Every {topic} Method — Here Is The Only One That Works \U0001f4af",
+    "Professional Chef's Secret {topic} Technique Finally Revealed \U0001f468\u200d\U0001f373",
+    "This {topic} Hack Will Change How You Cook Forever \U0001f92f",
+    "The Easiest {topic} Recipe That Tastes Incredibly Gourmet \U0001f60d",
+    "Stop Making {topic} The Wrong Way — Do This Instead \u2757",
+    "How To Make {topic} Better Than Any Restaurant Version \U0001f3e0",
+    "The One Ingredient That Makes {topic} Perfect Every Time \u2728",
+    "{topic} Secrets Only Professional Chefs Know About \U0001f9d1\u200d\U0001f373",
+    "Why This {topic} Recipe Is Going Viral Right Now \U0001f4c8",
+    "Make {topic} At Home In Minutes — Better Than Takeout \U0001f6d2",
+    "The {topic} Recipe I Wish I Knew Ten Years Ago \u23f0",
+    "This Is Why Your {topic} Never Tastes As Good \U0001f62d\U0001f373",
+    "Budget {topic} That Tastes Like Fine Dining \U0001f4b0\U0001f37d\ufe0f",
+    "The Crispy {topic} Secret Restaurants Do Not Want You To Know \U0001f914",
+    "From Basic to Gourmet: Transform Your {topic} Tonight \u2b50",
+    "Three Mistakes You Are Making With {topic} Right Now \u26a0\ufe0f",
+    "How To Make The Most Delicious {topic} Of Your Life \U0001f929",
 ]
 
 # ---------------------------------------------------------------------------
-# Animation-friendly scene descriptions
+# Food-specific scene descriptions for video assembly
 # ---------------------------------------------------------------------------
 _SCENE_POOLS: dict[str, list[str]] = {
     "intro": [
-        "Cartoon character with oversized eyes doing a dramatic double-take at the camera",
-        "Chibi character appearing in a flash of colorful sparkles with a big exclamation mark above their head",
-        "Stick figure sliding onto screen and pointing dramatically at a glowing sign that reads the topic",
-        "Rubber hose cartoon character vibrating with excitement like a cartoon alarm clock",
-        "Pixel art sprite doing a spinning entrance animation with confetti exploding everywhere",
-        "Minimalist blob character popping up from the bottom of frame with comically wide eyes",
+        "Close-up overhead shot of fresh ingredients laid out on a clean kitchen counter",
+        "Slow-motion pour of sauce over a beautifully plated dish with steam rising",
+        "Hands chopping fresh vegetables with expert knife skills on a wooden cutting board",
+        "Golden crispy food sizzling in a well-seasoned cast iron pan",
+        "Overhead flat lay of colorful fresh ingredients arranged artistically",
+        "Chef's hands adding a finishing garnish to a restaurant-quality dish",
     ],
     "middle": [
-        "Chibi character rage-typing on a tiny laptop while papers fly everywhere in slow motion",
-        "Two stick figures in a heated debate with thought bubbles full of chaos and question marks",
-        "Character doing the surprised Pikachu face as explosions happen casually in the background",
-        "South Park style character standing in front of a whiteboard covered entirely in confused doodles",
-        "Rubber hose cartoon brain running in circles with tiny gears flying off in all directions",
-        "Pixel art character opening a filing cabinet only to find another smaller filing cabinet inside",
-        "Blob character pulling out a chart that is just a drawing of a confused cat with the word yes",
-        "Chibi character surrounded by seventeen glowing browser tabs all showing question marks",
-        "Stick figure wizard consulting a scroll that unfurls all the way off screen and still has more scroll",
-        "Cartoon character checking a phone that displays only the spinning loading wheel and existential dread",
+        "Ingredient being added to a hot pan with a satisfying sizzle and steam",
+        "Close-up of perfectly caramelized golden-brown surface forming in real time",
+        "Hand stirring a rich, glossy sauce with a wooden spoon in a deep pot",
+        "Fresh herbs being torn and scattered over a vibrant, colorful dish",
+        "Side-by-side comparison of ingredients before and after proper preparation",
+        "Overhead time-lapse of a dish coming together step by step",
+        "Slow drizzle of olive oil catching the light as it hits a hot pan",
+        "Cross-section cut of a perfectly cooked piece of meat showing ideal doneness",
+        "Bubbling sauce in a pot with rising steam and rich amber color",
+        "Hands plating food with precision, adding layers and texture to a white plate",
     ],
     "punchline": [
-        "Character doing an exaggerated victory dance in extremely slow motion while confetti rains down",
-        "Chibi character turning to camera with finger guns and winking so hard it makes a sound effect",
-        "Rubber hose character doing a full body flop onto the ground in the most satisfied way possible",
-        "Stick figures high-fiving so enthusiastically they both fly off screen in opposite directions",
-        "Pixel art sprite pulling out a tiny subscribe button and offering it directly to the viewer",
-        "Minimalist blob character turning to camera and giving the most confident thumbs up imaginable",
+        "Final plated dish from overhead angle looking restaurant-quality and photo-perfect",
+        "Fork cutting into the finished dish revealing perfect texture and color inside",
+        "First bite reaction showing genuine satisfaction and flavor impact",
+        "The finished dish displayed against a beautiful backdrop with perfect lighting",
+        "Steam rising dramatically from a just-finished hot dish ready to be served",
+        "Close-up of the perfect golden-brown, crispy surface of the finished food",
     ],
 }
 
 # ---------------------------------------------------------------------------
-# Comedy-specific tags
+# Food-specific base tags — SEO-optimised for YouTube food content
 # ---------------------------------------------------------------------------
 _BASE_TAGS: list[str] = [
-    "funny animation",
-    "animated shorts",
-    "comedy shorts",
-    "funny cartoon",
-    "animation memes",
-    "hilarious",
-    "viral comedy",
-    "animated comedy",
-    "funny video",
-    "shorts funny",
-    "comedy animation",
-    "cartoon comedy",
-    "meme animation",
-    "funny animated",
-    "humor shorts",
-    "animated humor",
-    "comedy sketch animated",
-    "viral animated",
-    "funny shorts 2024",
-    "animated memes",
+    "food recipe",
+    "cooking tips",
+    "easy recipes",
+    "homemade cooking",
+    "recipe ideas",
+    "food hacks",
+    "cooking tutorial",
+    "quick meals",
+    "kitchen tips",
+    "food secrets",
+    "cooking techniques",
+    "meal ideas",
+    "food video",
+    "recipe video",
+    "cooking shorts",
+    "easy cooking",
+    "food inspiration",
+    "delicious recipes",
+    "cooking hacks",
+    "food channel",
 ]
 
 _TOPIC_TAG_MAP: list[tuple[list[str], list[str]]] = [
-    (["cat", "cats", "pet", "animal", "dog"], ["funny animals", "animal memes", "pet humor"]),
-    (["tech", "ai", "computer", "code", "software", "robot"], ["tech humor", "coding memes", "ai funny"]),
-    (["school", "homework", "teacher", "study", "class"], ["school memes", "student life funny", "homework humor"]),
-    (["food", "eat", "cook", "recipe", "snack"], ["food humor", "cooking fails funny", "food memes"]),
-    (["wifi", "internet", "phone", "app", "social media"], ["internet humor", "wifi memes", "phone humor"]),
-    (["work", "boss", "office", "job", "meeting"], ["work memes", "office humor", "job funny"]),
-    (["monday", "morning", "alarm", "wake", "sleep"], ["monday memes", "morning humor", "sleep funny"]),
-    (["brain", "think", "mind", "memory", "focus"], ["brain memes", "thinking humor", "mind funny"]),
-    (["parent", "family", "kids", "child", "mom", "dad"], ["family humor", "parenting memes", "kids funny"]),
-    (["game", "gamer", "video game", "play"], ["gamer memes", "gaming humor", "video game funny"]),
+    (["pasta", "spaghetti", "noodle", "linguine"], ["pasta recipe", "homemade pasta", "Italian cooking"]),
+    (["chicken", "poultry", "breast", "thigh"], ["chicken recipe", "easy chicken", "crispy chicken"]),
+    (["beef", "steak", "burger", "ground beef"], ["beef recipe", "steak cooking", "homemade burger"]),
+    (["fish", "salmon", "tuna", "seafood", "shrimp"], ["seafood recipe", "fish cooking", "healthy seafood"]),
+    (["vegetable", "veggie", "vegan", "plant", "salad"], ["vegetarian recipe", "vegan cooking", "healthy vegetables"]),
+    (["dessert", "cake", "cookie", "chocolate", "sweet"], ["dessert recipe", "baking tips", "homemade dessert"]),
+    (["bread", "baking", "dough", "yeast", "flour"], ["homemade bread", "baking recipe", "bread making"]),
+    (["breakfast", "egg", "pancake", "waffle", "oat"], ["breakfast recipe", "easy breakfast", "morning meals"]),
+    (["soup", "stew", "broth", "chowder", "bisque"], ["soup recipe", "homemade soup", "easy stew"]),
+    (["sauce", "gravy", "marinade", "dressing", "dip"], ["sauce recipe", "homemade sauce", "cooking sauce"]),
+    (["air fryer", "airfryer"], ["air fryer recipe", "air fryer cooking", "crispy air fryer"]),
+    (["slow cooker", "crockpot", "instant pot"], ["slow cooker recipe", "easy slow cooker", "hands off cooking"]),
+    (["healthy", "diet", "nutrition", "protein", "low calorie"], ["healthy recipe", "weight loss food", "nutritious meals"]),
+    (["budget", "cheap", "affordable", "frugal"], ["budget cooking", "cheap meals", "affordable recipes"]),
 ]
 
 
 def _topic_seed(topic: str) -> int:
     """Generate a stable integer seed from a topic string.
 
-    Uses MD5 (non-security use) to produce a consistent numeric seed so that
-    the same topic always selects the same template structure, keeping content
-    deterministic and reproducible.
+    Uses MD5 (non-security use) to produce a consistent numeric seed.
     """
     digest = hashlib.md5(topic.encode("utf-8")).hexdigest()  # noqa: S324
     return int(digest[:8], 16)
@@ -381,18 +343,14 @@ def _pick(seq: list, rng: random.Random) -> str:
 
 
 def _fill(template: str, topic: str) -> str:
-    """Replace ``{topic}`` placeholder in *template* with the actual *topic*.
-
-    Also normalises whitespace and strips leading/trailing spaces.
-    """
-    # Capitalise the topic for natural sentence flow when used at the start
+    """Replace ``{topic}`` placeholder in *template* with the actual *topic*."""
     filled = template.replace("{topic}", topic)
     filled = re.sub(r"\s+", " ", filled).strip()
     return filled
 
 
 def _build_scenes(rng: random.Random) -> list[str]:
-    """Build a list of animation-friendly scene descriptions."""
+    """Build a list of food-friendly scene descriptions."""
     intro = _pick(_SCENE_POOLS["intro"], rng)
     middle1 = _pick(_SCENE_POOLS["middle"], rng)
     remaining_middle = [s for s in _SCENE_POOLS["middle"] if s != middle1]
@@ -402,12 +360,8 @@ def _build_scenes(rng: random.Random) -> list[str]:
 
 
 def _build_tags(topic: str, rng: random.Random) -> list[str]:
-    """Generate a de-duplicated list of comedy animation tags for the topic.
-
-    Starts with the base tag set, appends topic-specific tags, then adds
-    a few topic-derived keyword tags.
-    """
-    tags: list[str] = list(_BASE_TAGS)  # copy to avoid mutation
+    """Generate a de-duplicated list of food/recipe tags for the topic."""
+    tags: list[str] = list(_BASE_TAGS)
 
     topic_lower = topic.lower()
     for keywords, extra_tags in _TOPIC_TAG_MAP:
@@ -418,7 +372,9 @@ def _build_tags(topic: str, rng: random.Random) -> list[str]:
     words = re.sub(r"[^a-zA-Z0-9 ]", "", topic).split()
     tags.extend(w.lower() for w in words[:3] if len(w) > 3)
 
-    # Shuffle and deduplicate while preserving base tags first
+    # Add trending food hashtag tags
+    tags.extend(["FoodHacks", "CookingTips", "RecipeIdeas", "FoodLovers", "HomeCooking"])
+
     seen: set[str] = set()
     deduped: list[str] = []
     for tag in tags:
@@ -426,52 +382,148 @@ def _build_tags(topic: str, rng: random.Random) -> list[str]:
             seen.add(tag)
             deduped.append(tag)
 
-    return deduped[:30]  # YouTube allows up to 500 chars total; 30 tags is safe
+    return deduped[:30]
 
 
 def _build_title(topic: str, rng: random.Random) -> str:
-    """Generate a clickbait-comedy style title capped at 100 characters."""
+    """Generate a clickbait-food style title capped at 100 characters."""
     template = _pick(_TITLES, rng)
     title = _fill(template, topic)
-    # Hard cap at 100 characters (YouTube limit)
     if len(title) > 100:
         title = title[:97] + "..."
     return title
 
 
 def _build_description(title: str, topic: str, tags: list[str]) -> str:
-    """Build a YouTube description with hashtags and a subscribe CTA."""
+    """Build an SEO-friendly YouTube description with hashtags and a subscribe CTA."""
     hashtags = " ".join(f"#{t.replace(' ', '')}" for t in tags[:10])
     return (
         f"{title}\n\n"
-        f"Welcome to the Funny Animation Shorts Factory — where trending topics "
-        f"meet cartoon chaos and comedy gold! Today's episode: {topic}.\n\n"
-        f"We use AI-powered comedy scripts, animated-style visuals, and expressive "
-        f"voice acting to bring you hilarious animated shorts every day. "
-        f"Subscribe so you never miss a laugh!\n\n"
+        f"Welcome to the Food Making Videos Factory — where we share professional "
+        f"cooking secrets, viral recipes, and food hacks for home cooks who want "
+        f"restaurant-quality results! Today's recipe: {topic}.\n\n"
+        f"We use AI-powered research and professional culinary techniques to create "
+        f"engaging food content designed for the English-speaking YouTube audience. "
+        f"Subscribe and hit the bell so you never miss a recipe!\n\n"
+        f"📌 TIMESTAMPS:\n"
+        f"0:00 - The hook that changes everything\n"
+        f"0:10 - Key ingredients revealed\n"
+        f"0:25 - The professional technique\n"
+        f"0:45 - The secret finishing touch\n"
+        f"0:52 - Final result reveal\n\n"
         f"{hashtags}\n\n"
-        f"#Shorts #FunnyShorts #AnimationComedy #CartoonHumor"
+        f"#Shorts #FoodShorts #CookingShorts #FoodHacks #RecipeIdeas"
     )
 
 
-def generate_script(topic: str) -> ScriptData:
-    """Generate a complete comedy animation script for the given *topic*.
+# ---------------------------------------------------------------------------
+# OpenRouter AI script generation
+# ---------------------------------------------------------------------------
 
-    Uses deterministic template selection seeded on the topic text so that
-    identical topics always produce structurally identical (though freshened)
-    scripts.  A time-based component ensures variety across hourly runs even
-    when the same topic recurs.
+_OPENROUTER_SYSTEM_PROMPT = """You are a professional YouTube food content scriptwriter specializing in viral
+food Shorts for English-speaking audiences. Your scripts must be:
+- 150-180 words (55 second narration target)
+- Structured with: viral hook (first 3-5 seconds) → professional food tips/recipe → strategic CTAs
+- Designed to maximize watch time, likes, and subscriptions
+- Written in an engaging, conversational American English tone with food expertise
+- Include cooking tips, techniques, or food science that genuinely educates and delights
+- Natural speech patterns optimized for female voice TTS narration
+
+IMPORTANT: Return ONLY a valid JSON object (no markdown fences, no extra text) with these exact keys:
+{
+    "title": "YouTube title (max 100 chars, include food emoji, power words)",
+    "hook": "First 1-2 sentences — viral hook with curiosity gap or shocking fact",
+    "script": "Full 150-180 word narration script as plain text (no markup, no SSML tags)",
+    "scenes": ["scene1 food visual description", "scene2 food visual description", "scene3 food visual description", "scene4 food visual description"],
+    "tags": ["tag1", "tag2", "tag3 up to 25 food/cooking tags"],
+    "description": "SEO-friendly YouTube description with main keyword in first line, 150-200 words"
+}
+Respond with the JSON object only. Do not include any explanation, preamble, or markdown code blocks."""
+
+
+def _generate_script_via_openrouter(topic: str) -> dict[str, Any] | None:
+    """Call the OpenRouter AI API to generate a professional food script.
 
     Args:
-        topic: The trending or comedy topic to build the script around.
+        topic: The food topic to generate a script for.
 
     Returns:
-        A :class:`ScriptData` dict with keys: ``title``, ``script``,
-        ``caption_script``, ``hook``, ``scenes``, ``tags``, ``description``.
+        A dict with script data keys, or None if the API call fails.
     """
-    topic = topic.strip() or "random chaos"
+    api_key = getattr(config, "OPENROUTER_API_KEY", None) or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        logger.info("OPENROUTER_API_KEY not set — using template-based script generation")
+        return None
 
-    # Combine topic seed with an hourly time component for variety across runs
+    try:
+        import httpx  # type: ignore[import]
+    except ImportError:
+        logger.warning("httpx not installed — falling back to template scripts. Run: pip install httpx")
+        return None
+
+    model = getattr(config, "OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    user_prompt = (
+        f"Create a viral food making video script for this topic: '{topic}'\n\n"
+        f"The script must:\n"
+        f"1. Open with a curiosity gap or shocking food fact hook about {topic}\n"
+        f"2. Include a like CTA at around 25% of the script\n"
+        f"3. Include a subscribe CTA at around 50% of the script\n"
+        f"4. Include a comment CTA at around 75% of the script\n"
+        f"5. End with a share CTA\n"
+        f"6. Mention real techniques, ingredients, or food science related to {topic}\n"
+        f"7. Be enthusiastic but credible — like a knowledgeable food creator\n"
+        f"8. Target: English-speaking home cooks who love food content\n\n"
+        f"Return only the JSON object as specified in the system prompt."
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/itsShahAmar/annimation.github.io",
+        "X-Title": "Food Making Videos Factory",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _OPENROUTER_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.8,
+        "max_tokens": 1200,
+    }
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"].strip()
+
+        # Strip markdown code fences if present
+        if content.startswith("```"):
+            content = re.sub(r"^```[a-z]*\n?", "", content, flags=re.MULTILINE)
+            content = re.sub(r"\n?```$", "", content, flags=re.MULTILINE)
+
+        script_data = json.loads(content)
+        logger.info("OpenRouter script generated successfully for topic: '%s'", topic)
+        return script_data
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("OpenRouter API call failed for '%s': %s — falling back to templates", topic, exc)
+        return None
+
+
+def _build_script_from_template(topic: str) -> ScriptData:
+    """Generate a professional food script using deterministic templates.
+
+    Used as fallback when OpenRouter AI is unavailable.
+    """
+    topic = topic.strip() or "delicious home cooking"
+
     seed = _topic_seed(topic) ^ (int(time.time()) // 3600)
     rng = random.Random(seed)
 
@@ -479,22 +531,23 @@ def generate_script(topic: str) -> ScriptData:
     hook_template = _pick(_HOOKS, rng)
     hook = _fill(hook_template, topic)
 
-    # 2. Body — pick from all available patterns
+    # 2. Body
     body_template = _pick(_ALL_BODIES, rng)
     body = _fill(body_template, topic)
 
-    # 3. Punchline / CTA
-    punchline_template = _pick(_PUNCHLINES, rng)
-    punchline = _fill(punchline_template, topic)
+    # 3. CTAs — sprinkled through the script
+    cta_early = _pick(_CTA_EARLY, rng)
+    cta_late = _pick(_CTA_LATE, rng)
+    punchline = _fill(_pick(_PUNCHLINES, rng), topic)
 
-    # 4. Full script
-    script = f"{hook} {body} {punchline}"
+    # 4. Full script with CTAs at strategic positions
+    script_parts = [hook, cta_early, body, cta_late, punchline]
+    script = " ".join(script_parts)
 
     # Trim if too long while preserving sentence boundaries
     words = script.split()
     if len(words) > _MAX_WORDS:
         trimmed = " ".join(words[:_MAX_WORDS])
-        # Try to end on a sentence boundary
         for punct in (".", "!", "?"):
             idx = trimmed.rfind(punct)
             if idx > len(trimmed) // 2:
@@ -502,25 +555,11 @@ def generate_script(topic: str) -> ScriptData:
                 break
         script = trimmed
 
-    # 5. Caption script — same as script (plain text, no markup)
     caption_script = re.sub(r"\s+", " ", script).strip()
-
-    # 6. Scenes
     scenes = _build_scenes(rng)
-
-    # 7. Tags
     tags = _build_tags(topic, rng)
-
-    # 8. Title
     title = _build_title(topic, rng)
-
-    # 9. Description
     description = _build_description(title, topic, tags)
-
-    logger.info(
-        "Comedy script generated for topic '%s': title='%s', words=%d, scenes=%d",
-        topic, title, len(script.split()), len(scenes),
-    )
 
     return ScriptData(
         title=title,
@@ -531,3 +570,68 @@ def generate_script(topic: str) -> ScriptData:
         tags=tags,
         description=description,
     )
+
+
+def generate_script(topic: str) -> ScriptData:
+    """Generate a complete food script for the given *topic*.
+
+    Tries OpenRouter AI first for professional, engaging scripts.
+    Falls back to template-based generation when the API is unavailable.
+
+    Args:
+        topic: The food topic to build the script around.
+
+    Returns:
+        A :class:`ScriptData` dict with keys: ``title``, ``script``,
+        ``caption_script``, ``hook``, ``scenes``, ``tags``, ``description``.
+    """
+    topic = topic.strip() or "delicious home cooking"
+
+    # --- Primary: OpenRouter AI ---
+    ai_result = _generate_script_via_openrouter(topic)
+    if ai_result:
+        try:
+            title = str(ai_result.get("title", ""))[:100] or _build_title(topic, random.Random())
+            script = str(ai_result.get("script", "")).strip()
+            hook = str(ai_result.get("hook", "")).strip()
+            scenes = ai_result.get("scenes", [])
+            tags = ai_result.get("tags", [])
+            description = str(ai_result.get("description", "")).strip()
+
+            # Validation: ensure required fields are populated
+            if not script or len(script.split()) < 20:
+                raise ValueError("AI script too short")
+            if not isinstance(scenes, list) or len(scenes) == 0:
+                scenes = _build_scenes(random.Random(_topic_seed(topic)))
+            if not isinstance(tags, list) or len(tags) < 5:
+                tags = _build_tags(topic, random.Random(_topic_seed(topic)))
+            if not description:
+                description = _build_description(title, topic, tags)
+            if not hook:
+                hook = script.split(".")[0] + "." if "." in script else script[:100]
+
+            caption_script = re.sub(r"\s+", " ", script).strip()
+
+            logger.info(
+                "Food script generated via OpenRouter AI for topic '%s' (%d words, %d tags)",
+                topic, len(script.split()), len(tags),
+            )
+            return ScriptData(
+                title=title,
+                script=script,
+                caption_script=caption_script,
+                hook=hook,
+                scenes=scenes,
+                tags=tags,
+                description=description,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OpenRouter result validation failed: %s — falling back to templates", exc)
+
+    # --- Fallback: Template-based ---
+    result = _build_script_from_template(topic)
+    logger.info(
+        "Food script generated via templates for topic '%s' (%d words, %d tags)",
+        topic, len(result["script"].split()), len(result["tags"]),
+    )
+    return result

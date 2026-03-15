@@ -1,10 +1,10 @@
 """
-thumbnail.py — Generate eye-catching comedy animation thumbnails for the
-Funny Animation Shorts Factory.
+thumbnail.py — Generate eye-catching food content thumbnails for the
+Food Making Videos Factory.
 
-Creates vibrant neon gradient backgrounds with bold comic-style title text,
-emoji accents, burst shapes, and WOW/LOL/OMG overlays — designed to stop
-the scroll and signal instant comedy content.
+Creates vibrant warm gradient backgrounds with bold food-style title text,
+food emoji accents, burst shapes, and recipe/tip overlays — designed to stop
+the scroll and signal irresistible food content.
 """
 
 import logging
@@ -22,54 +22,70 @@ THUMB_W = 1280
 THUMB_H = 720
 
 # ---------------------------------------------------------------------------
-# Comedy colour palettes — vibrant neon gradients
+# Food colour palettes — warm, appetising gradients for food appeal
 # ---------------------------------------------------------------------------
 _GRADIENT_PALETTES: list[tuple[tuple[int, int, int], tuple[int, int, int]]] = [
-    ((255, 200, 0), (255, 80, 0)),       # yellow-to-orange (energy!)
-    ((255, 0, 150), (120, 0, 255)),      # pink-to-purple (viral vibes)
-    ((0, 230, 200), (0, 100, 255)),      # cyan-to-blue (fresh and fun)
-    ((80, 255, 0), (0, 200, 100)),       # lime-to-green (wholesome chaos)
-    ((255, 100, 0), (255, 0, 100)),      # orange-to-red (spicy comedy)
-    ((0, 255, 200), (255, 200, 0)),      # mint-to-gold (premium funny)
+    ((255, 140, 0), (200, 50, 0)),       # amber-to-red (spicy and appetising)
+    ((255, 200, 50), (220, 80, 0)),      # golden-to-orange (baked and roasted)
+    ((180, 255, 100), (0, 180, 80)),     # fresh green (healthy and vibrant)
+    ((255, 100, 120), (180, 0, 80)),     # pink-to-red (desserts and berries)
+    ((255, 220, 80), (200, 100, 0)),     # yellow-to-amber (sauces and spices)
+    ((80, 200, 255), (0, 100, 200)),     # sky blue (clean and fresh)
 ]
 
 _ACCENT_COLORS: list[tuple[int, int, int]] = [
-    (255, 255, 0),   # bright yellow
-    (255, 0, 200),   # hot pink
-    (0, 255, 100),   # neon green
-    (255, 150, 0),   # vivid orange
-    (100, 200, 255), # sky blue
+    (255, 200, 0),   # golden yellow
+    (255, 80, 0),    # vivid orange
+    (200, 50, 0),    # deep red
+    (0, 180, 80),    # fresh green
+    (255, 150, 50),  # warm amber
 ]
 
 _TEXT_COLOR = (255, 255, 255)    # white
 _STROKE_COLOR = (0, 0, 0)        # black for outline
 
 # ---------------------------------------------------------------------------
-# Comedy emoji bank — maps topic keywords to reaction emojis
+# Food emoji bank — maps topic keywords to food emojis
 # ---------------------------------------------------------------------------
-_COMEDY_TOPIC_EMOJIS: list[tuple[list[str], str]] = [
-    (["cat", "cats", "kitten", "pet"], "😹"),
-    (["dog", "puppy", "woof"], "🐶"),
-    (["food", "eat", "cook", "pizza", "snack"], "😋"),
-    (["brain", "think", "mind", "smart"], "🧠"),
-    (["wifi", "internet", "tech", "phone", "app"], "📱"),
-    (["school", "homework", "teacher", "study"], "📚"),
-    (["monday", "alarm", "morning", "wake", "sleep"], "😴"),
-    (["work", "boss", "office", "meeting", "job"], "💼"),
-    (["game", "gamer", "video game", "play"], "🎮"),
-    (["money", "finance", "invest", "budget"], "💸"),
-    (["travel", "vacation", "trip", "adventure"], "✈️"),
-    (["ai", "robot", "automation", "machine"], "🤖"),
-    (["music", "song", "dance", "beat"], "🎵"),
-    (["sport", "gym", "workout", "fitness"], "💪"),
+_FOOD_TOPIC_EMOJIS: list[tuple[list[str], str]] = [
+    (["pasta", "spaghetti", "noodle", "linguine", "penne"], "\U0001f35d"),       # 🍝
+    (["pizza"], "\U0001f355"),                                                    # 🍕
+    (["chicken", "poultry", "drumstick", "wing"], "\U0001f357"),                  # 🍗
+    (["burger", "beef", "ground beef", "patty"], "\U0001f354"),                   # 🍔
+    (["sushi", "fish", "salmon", "tuna", "seafood"], "\U0001f363"),               # 🍣
+    (["ramen", "noodle soup", "pho", "bowl"], "\U0001f35c"),                      # 🍜
+    (["taco", "burrito", "mexican", "salsa"], "\U0001f32e"),                      # 🌮
+    (["bread", "baking", "loaf", "sourdough"], "\U0001f35e"),                     # 🍞
+    (["cake", "baking", "cupcake", "birthday"], "\U0001f370"),                    # 🍰
+    (["chocolate", "dessert", "sweet", "brownie"], "\U0001f36b"),                 # 🍫
+    (["egg", "breakfast", "omelette", "scrambled"], "\U0001f373"),                # 🍳
+    (["salad", "vegetable", "vegan", "healthy", "green"], "\U0001f957"),          # 🥗
+    (["rice", "fried rice", "stir fry", "wok"], "\U0001f35a"),                    # 🍚
+    (["steak", "meat", "bbq", "grill"], "\U0001f969"),                            # 🥩
+    (["soup", "stew", "broth", "chowder"], "\U0001f372"),                         # 🍲
+    (["avocado", "toast", "brunch"], "\U0001f951"),                               # 🥑
+    (["ice cream", "frozen", "gelato"], "\U0001f368"),                            # 🍦
+    (["cookie", "biscuit", "snack"], "\U0001f36a"),                               # 🍪
+    (["pancake", "waffle", "syrup"], "\U0001f95e"),                               # 🥞
+    (["smoothie", "juice", "drink", "beverage"], "\U0001f9c3"),                   # 🧃
+    (["curry", "indian", "spicy", "sauce"], "\U0001f35b"),                        # 🍛
 ]
 
-_DEFAULT_COMEDY_EMOJIS = ["😂", "💀", "🤣", "😭", "🔥", "💥", "😱", "🎉"]
+_DEFAULT_FOOD_EMOJIS = [
+    "\U0001f373",  # 🍳 frying pan
+    "\U0001f525",  # 🔥 fire / hot
+    "\U0001f60d",  # 😍 heart eyes
+    "\u2764\ufe0f", # ❤️ heart
+    "\U0001f4af",  # 💯 100
+    "\u2728",       # ✨ sparkles
+    "\U0001f929",  # 🤩 star-struck
+    "\U0001f60e",  # 😎 sunglasses
+]
 
 # ---------------------------------------------------------------------------
-# Accent text overlays — big comedy reaction words
+# Accent text overlays — food content engagement words
 # ---------------------------------------------------------------------------
-_ACCENT_TEXTS: list[str] = ["LOL", "WOW", "OMG", "lmao", "bruh", "fr??", "HELP"]
+_ACCENT_TEXTS: list[str] = ["VIRAL!", "WOW!", "MUST TRY!", "EASY!", "5-MIN", "SECRET", "HACK"]
 
 
 def _make_gradient(w: int, h: int, top: tuple[int, int, int], bottom: tuple[int, int, int]) -> Image.Image:
@@ -165,25 +181,25 @@ def _draw_burst(draw: ImageDraw.ImageDraw, cx: int, cy: int, r_outer: int,
 
 
 def _topic_emoji(topic: str) -> str:
-    """Return a comedy-appropriate emoji for the topic."""
+    """Return a food-appropriate emoji for the topic."""
     topic_lower = topic.lower()
-    for keywords, emoji in _COMEDY_TOPIC_EMOJIS:
+    for keywords, emoji in _FOOD_TOPIC_EMOJIS:
         if any(kw in topic_lower for kw in keywords):
             return emoji
-    # Fall back to a random comedy reaction emoji seeded on the topic
+    # Fall back to a random food emoji seeded on the topic
     seed = sum(ord(c) for c in topic)
-    return _DEFAULT_COMEDY_EMOJIS[seed % len(_DEFAULT_COMEDY_EMOJIS)]
+    return _DEFAULT_FOOD_EMOJIS[seed % len(_DEFAULT_FOOD_EMOJIS)]
 
 
 def create_thumbnail(title: str, topic: str) -> Path:
-    """Generate a 1280 × 720 JPEG comedy animation thumbnail for the given video *title*.
+    """Generate a 1280 × 720 JPEG food content thumbnail for the given video *title*.
 
     Design language:
-    - Vibrant neon gradient background
-    - Cartoon-style starburst behind the title text
+    - Warm vibrant gradient background (food-appetising tones)
+    - Starburst accent behind the title text
     - Bold white title with thick black stroke
-    - Large comedy emoji accent
-    - WOW/LOL/OMG accent overlay in the corner
+    - Large food emoji accent (context-matched to topic)
+    - Recipe/tip accent overlay in the corner (VIRAL! / EASY! / 5-MIN / etc.)
     - Bright accent bar at the bottom with subscribe CTA
 
     Args:
@@ -280,7 +296,7 @@ def create_thumbnail(title: str, topic: str) -> Path:
 
     watermark_font = _load_font(42)
     _draw_text_with_stroke(
-        draw, (50, bar_y + 14), "▶ SUBSCRIBE — NEW FUNNY ANIMATION EVERY DAY!",
+        draw, (50, bar_y + 14), "\u25b6 SUBSCRIBE \u2014 NEW FOOD RECIPE EVERY DAY!",
         font=watermark_font,
         fill=(255, 255, 0),
         stroke_fill=(0, 0, 0),
@@ -292,5 +308,5 @@ def create_thumbnail(title: str, topic: str) -> Path:
     thumb_path = Path(tmp.name)
     tmp.close()
     img.save(thumb_path, "JPEG", quality=95, subsampling=0)
-    logger.info("Comedy animation thumbnail saved to '%s'", thumb_path)
+    logger.info("Food content thumbnail saved to '%s'", thumb_path)
     return thumb_path

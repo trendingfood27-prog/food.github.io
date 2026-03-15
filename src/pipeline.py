@@ -1,12 +1,12 @@
 """
-pipeline.py — Main orchestrator for the Funny Animation Shorts Factory pipeline.
+pipeline.py — Main orchestrator for the Food Making Videos Factory pipeline.
 
 Runs all steps in sequence:
-  1. Fetch the best trending topic (comedy-scored)
-  2. Generate a comedy animation script
-  3. Convert the script to speech (TTS)
-  4. Create the animation-style video
-  5. Generate a comedy thumbnail
+  1. Fetch the best trending topic (food-scored)
+  2. Generate a professional food script (via OpenRouter AI or templates)
+  3. Convert the script to speech (TTS — female voice)
+  4. Create the food-style video
+  5. Generate a food thumbnail
   6. Upload to YouTube
 
 Usage::
@@ -42,10 +42,10 @@ def _cleanup(*paths: Path | None) -> None:
 
 
 def run_pipeline() -> None:
-    """Execute the full Funny Animation Shorts Factory creation and upload pipeline."""
+    """Execute the full Food Making Videos Factory creation and upload pipeline."""
     start_time = time.time()
     logger.info("=" * 60)
-    logger.info("🎬 Funny Animation Shorts Factory — pipeline starting")
+    logger.info("\U0001f373 Food Making Videos Factory — pipeline starting")
     logger.info("=" * 60)
 
     audio_path: Path | None = None
@@ -56,25 +56,25 @@ def run_pipeline() -> None:
         # ------------------------------------------------------------------
         # Step 0: Validate YouTube credentials (fail fast before heavy work)
         # ------------------------------------------------------------------
-        logger.info("[0/6] 🔑 Validating YouTube credentials…")
+        logger.info("[0/6] \U0001f511 Validating YouTube credentials…")
         from src.uploader import validate_credentials  # noqa: PLC0415
 
         validate_credentials()
         logger.info("      Credentials OK")
 
         # ------------------------------------------------------------------
-        # Step 1: Find best comedy topic
+        # Step 1: Find best food topic
         # ------------------------------------------------------------------
-        logger.info("[1/6] 🎭 Finding comedy gold — fetching trending topics…")
+        logger.info("[1/6] \U0001f525 Finding viral food topic — fetching trending topics…")
         from src.trending import get_best_topic  # noqa: PLC0415
 
         topic = get_best_topic()
-        logger.info("      Comedy topic selected: '%s'", topic)
+        logger.info("      Food topic selected: '%s'", topic)
 
         # ------------------------------------------------------------------
-        # Step 2: Generate comedy animation script
+        # Step 2: Generate professional food script via OpenRouter AI
         # ------------------------------------------------------------------
-        logger.info("[2/6] ✍️  Writing jokes — generating comedy script for: '%s'…", topic)
+        logger.info("[2/6] \u270d\ufe0f  Writing script — generating AI food script for: '%s'…", topic)
         from src.scriptwriter import generate_script  # noqa: PLC0415
 
         script_data = generate_script(topic)
@@ -85,21 +85,21 @@ def run_pipeline() -> None:
         scenes = script_data["scenes"]
         tags = script_data["tags"]
         description = script_data["description"]
-        logger.info("      Comedy title: '%s'", title)
+        logger.info("      Food video title: '%s'", title)
 
         # ------------------------------------------------------------------
-        # Step 3: Text-to-speech (expressive voice acting)
+        # Step 3: Text-to-speech (professional female voice narration)
         # ------------------------------------------------------------------
-        logger.info("[3/6] 🎙️  Voice acting — generating expressive TTS audio…")
+        logger.info("[3/6] \U0001f3a4 Narrating — generating professional female TTS audio…")
         from src.tts import generate_speech  # noqa: PLC0415
 
         audio_path, audio_duration = generate_speech(script_text)
         logger.info("      Audio duration: %.2f s", audio_duration)
 
         # ------------------------------------------------------------------
-        # Step 4: Create animation-style video
+        # Step 4: Create food-style video
         # ------------------------------------------------------------------
-        logger.info("[4/6] 🎬 Animating it — creating cartoon-style video…")
+        logger.info("[4/6] \U0001f3ac Assembling — creating food video with stock footage…")
         from src.video_creator import create_video  # noqa: PLC0415
 
         video_path = create_video(audio_path, script_text, scenes, audio_duration,
@@ -107,9 +107,9 @@ def run_pipeline() -> None:
         logger.info("      Video path: '%s'", video_path)
 
         # ------------------------------------------------------------------
-        # Step 5: Generate comedy thumbnail
+        # Step 5: Generate food thumbnail
         # ------------------------------------------------------------------
-        logger.info("[5/6] 🖼️  Eye-candy thumbnail — generating comedy animation thumbnail…")
+        logger.info("[5/6] \U0001f5bc\ufe0f  Designing thumbnail — generating food content thumbnail…")
         from src.thumbnail import create_thumbnail  # noqa: PLC0415
 
         thumb_path = create_thumbnail(title, topic)
@@ -118,7 +118,7 @@ def run_pipeline() -> None:
         # ------------------------------------------------------------------
         # Step 6: Upload to YouTube
         # ------------------------------------------------------------------
-        logger.info("[6/6] 🚀 Upload and go viral — uploading to YouTube…")
+        logger.info("[6/6] \U0001f680 Upload and go viral — uploading to YouTube…")
         from src.uploader import upload_video  # noqa: PLC0415
 
         video_id, video_url = upload_video(
@@ -135,7 +135,7 @@ def run_pipeline() -> None:
         # ------------------------------------------------------------------
         elapsed = time.time() - start_time
         logger.info("=" * 60)
-        logger.info("🎉 Funny Animation Shorts Factory — pipeline completed in %.1f seconds", elapsed)
+        logger.info("\U0001f389 Food Making Videos Factory — pipeline completed in %.1f seconds", elapsed)
         logger.info("  Topic      : %s", topic)
         logger.info("  Title      : %s", title)
         logger.info("  Video ID   : %s", video_id)
@@ -144,10 +144,10 @@ def run_pipeline() -> None:
 
     except Exception as exc:  # noqa: BLE001
         elapsed = time.time() - start_time
-        logger.error("💥 Pipeline failed after %.1f seconds: %s", elapsed, exc, exc_info=True)
+        logger.error("\U0001f4a5 Pipeline failed after %.1f seconds: %s", elapsed, exc, exc_info=True)
     finally:
         _cleanup(audio_path, video_path, thumb_path)
-        logger.info("🧹 Temporary files cleaned up")
+        logger.info("\U0001f9f9 Temporary files cleaned up")
 
 
 if __name__ == "__main__":

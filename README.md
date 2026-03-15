@@ -1,27 +1,28 @@
-# 🎬 Funny Animation Shorts Factory
+# 🍳 Food Making Videos Factory
 
-> Fully automated pipeline that creates **hilarious animated comedy YouTube Shorts**.
-> Uses AI-powered comedy scripts, cartoon-style visuals, expressive voice acting, and
-> meme-worthy thumbnails. **100% free, no paid APIs.**
+> Fully automated pipeline that creates **engaging food-making YouTube Shorts**.
+> Uses AI-powered professional scripts (OpenRouter), female neural TTS voices,
+> multi-source food stock footage, and viral food thumbnails.
+> **Designed for English-speaking audiences.**
 
-[![Tests](https://github.com/ShahAmar-Official/annimation.github.io/actions/workflows/tests.yml/badge.svg)](https://github.com/ShahAmar-Official/annimation.github.io/actions/workflows/tests.yml)
-[![Pipeline](https://github.com/ShahAmar-Official/annimation.github.io/actions/workflows/automation.yml/badge.svg)](https://github.com/ShahAmar-Official/annimation.github.io/actions/workflows/automation.yml)
+[![Tests](https://github.com/itsShahAmar/annimation.github.io/actions/workflows/tests.yml/badge.svg)](https://github.com/itsShahAmar/annimation.github.io/actions/workflows/tests.yml)
+[![Pipeline](https://github.com/itsShahAmar/annimation.github.io/actions/workflows/automation.yml/badge.svg)](https://github.com/itsShahAmar/annimation.github.io/actions/workflows/automation.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🤣 What It Does
+## 🍽️ What It Does
 
-The **Funny Animation Shorts Factory** automatically:
+The **Food Making Videos Factory** automatically:
 
-1. 🎭 **Finds Comedy Gold** — Scans trending topics + applies comedy scoring to pick the funniest premise
-2. ✍️ **Writes Jokes** — AI comedy script engine with 30+ hook templates, 6 body patterns (dialogue, chaos narrator, tutorial gone wrong, inner monologue, news anchor, time travel)
-3. 🎙️ **Voice Acting** — Expressive neural TTS voices (Microsoft Edge, free) optimised for comedy delivery
-4. 🎬 **Animates It** — Cartoon-style video assembly with vibrant color grading and meme-style captions
-5. 🖼️ **Eye-Candy Thumbnail** — Neon gradient, starburst burst shapes, WOW/LOL/OMG overlays
-6. 🚀 **Uploads & Goes Viral** — Direct to your YouTube channel via the official API
+1. 🔥 **Finds Viral Food Topics** — Scans Google Trends + YouTube Trends + food niche pools and applies a food-awareness scoring heuristic to pick the most engaging recipe/cooking premise
+2. 🤖 **AI Script Writing** — Professional scripts via [OpenRouter AI](https://openrouter.ai) (GPT-4o-mini) with viral hooks, step-by-step food narration, and strategic CTAs at 25%, 50%, 75%, and 95% of the script. Falls back to high-quality templates when the API key is not set.
+3. 🎙️ **Female Professional Narration** — 12 female Microsoft Edge Neural TTS voices rotating each run for variety (Sara, Aria, Jenny, Michelle, Cora, Elizabeth, Sonia, Libby, Natasha, Clara, Neerja, Emily)
+4. 🎬 **Food Video Assembly** — Stock footage from Pexels (primary), Pixabay (secondary), and Unsplash (image fallback) with warm food colour grading and bold captions
+5. 🖼️ **Food Thumbnails** — Warm gradient backgrounds, food emoji matched to topic, VIRAL!/EASY!/5-MIN accent overlays
+6. 🚀 **Uploads & Goes Viral** — Direct to your YouTube channel via the official API (category: Howto & Style)
 
-All 100% automated — runs every 6 hours via GitHub Actions. **Zero cost.**
+All 100% automated — runs every 6 hours via GitHub Actions.
 
 ---
 
@@ -31,7 +32,10 @@ All 100% automated — runs every 6 hours via GitHub Actions. **Zero cost.**
 
 - A **YouTube channel** with a Google Cloud project and OAuth2 client secret
 - A **Pexels API key** (free at [pexels.com/api](https://www.pexels.com/api/))
+- An **OpenRouter API key** (for AI script generation — get yours at [openrouter.ai](https://openrouter.ai/keys))
 - A **GitHub account** to fork this repo and set Secrets
+- _(Optional)_ A **Pixabay API key** (free at [pixabay.com/api/docs](https://pixabay.com/api/docs/)) for additional stock footage
+- _(Optional)_ An **Unsplash Access Key** (free at [unsplash.com/developers](https://unsplash.com/developers)) for food photography fallback
 - _(Optional)_ A **NewsAPI key** for trending headline topics
 
 ### Step 1 — Fork the Repository
@@ -61,108 +65,113 @@ python -c "
 import json, os
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-SCOPES = ['https://www.googleapis.com/auth/youtube.upload',
-          'https://www.googleapis.com/auth/youtube.force-ssl']
-
-flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
+secret = json.loads(open('client_secret.json').read())
+flow = InstalledAppFlow.from_client_config(
+    secret,
+    scopes=['https://www.googleapis.com/auth/youtube.upload',
+            'https://www.googleapis.com/auth/youtube']
+)
 creds = flow.run_local_server(port=0)
-print(json.dumps({
-    'access_token': creds.token,
-    'refresh_token': creds.refresh_token,
-    'token_uri': creds.token_uri
-}, indent=2))
+print(creds.to_json())
 "
 ```
 
-Copy the printed JSON — this is your `YOUTUBE_TOKEN`.
+Copy the JSON output — you'll need it for `YOUTUBE_TOKEN` secret.
 
-### Step 4 — Add GitHub Secrets
+### Step 4 — Set GitHub Secrets
 
-In your fork: **Settings → Secrets and variables → Actions → New repository secret**
+Go to **Settings → Secrets → Actions** in your fork and add:
 
-| Secret Name | Value |
-|-------------|-------|
-| `YOUTUBE_CLIENT_SECRET` | Contents of your OAuth2 JSON file |
-| `YOUTUBE_TOKEN` | Token JSON from Step 3 |
-| `PEXELS_API_KEY` | Your Pexels API key |
-| `NEWSAPI_KEY` | *(Optional)* Your NewsAPI key |
+| Secret | Value | Source |
+|--------|-------|--------|
+| `YOUTUBE_CLIENT_SECRET` | JSON content of your OAuth2 client file | Step 2 above |
+| `YOUTUBE_TOKEN` | JSON token from the auth flow | Step 3 above |
+| `PEXELS_API_KEY` | Your Pexels API key | [pexels.com/api](https://www.pexels.com/api/) |
+| `OPENROUTER_API_KEY` | Your OpenRouter API key | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `PIXABAY_API_KEY` | _(Optional)_ Your Pixabay key | [pixabay.com/api/docs](https://pixabay.com/api/docs/) |
+| `UNSPLASH_ACCESS_KEY` | _(Optional)_ Your Unsplash key | [unsplash.com/developers](https://unsplash.com/developers) |
+| `NEWSAPI_KEY` | _(Optional)_ Your NewsAPI key | [newsapi.org](https://newsapi.org/) |
 
 ### Step 5 — Enable GitHub Actions
 
-Go to **Actions** tab → enable workflows. The pipeline runs every 6 hours automatically, or trigger it manually via **workflow_dispatch**.
+Go to **Actions** tab in your fork and click **"I understand my workflows, go ahead and enable them"**.
+
+The pipeline will automatically run every 6 hours and upload a new food video to your channel.
 
 ---
 
-## 😂 Comedy Script Features
+## 🧠 AI Script Generation (OpenRouter)
 
-### 30+ Hook Templates
+Scripts are generated using [OpenRouter AI](https://openrouter.ai) which gives you access to GPT-4o-mini, Claude, Llama, and more via a single API.
 
-The scriptwriter opens every video with an absurd, meme-culture hook designed to stop the scroll in the first 3 seconds:
+### How to Get Your OpenRouter API Key
 
-- `"What if {topic} was actually run by a council of angry cats?"`
-- `"POV: You explained {topic} to your grandma and she started a business."`
-- `"Nobody: ... Absolutely Nobody: ... {topic}: chaos ensues."`
-- `"{topic} but it is explained by two neurons fighting in your brain."`
-- `"Me trying to understand {topic} at 3 AM be like..."`
-- And 25+ more Gen-Z, meme-culture, relatable comedy hooks
+1. Sign up at [openrouter.ai](https://openrouter.ai)
+2. Go to [openrouter.ai/keys](https://openrouter.ai/keys)
+3. Click **"Create Key"** and copy the key
+4. Add it as `OPENROUTER_API_KEY` in GitHub Secrets
 
-### 6 Comedy Body Patterns
+### What the AI Generates
 
-| Pattern | Description |
-|---------|-------------|
-| 🗣️ Character Dialogue | Two funny animated characters debating/reacting |
-| 📢 Narrator + Chaos | Calm narrator voice while animated chaos unfolds |
-| 📋 Tutorial Gone Wrong | How-to that hilariously goes off the rails |
-| 🧠 Inner Monologue | Character's thoughts vs reality |
-| 📺 News Anchor | Fake news broadcast with ridiculous takes |
-| ⏰ Time Travel | Future/past perspective comedy |
+Each AI-generated script includes:
+- **Viral hook** (first 3-5 seconds): curiosity gap or shocking food fact
+- **Professional food narration**: step-by-step technique with personality
+- **Strategic CTAs**: like (25%), subscribe (50%), comment (75%), share (end)
+- **15-25 SEO-optimised tags**: mix of broad and niche food keywords
+- **SEO-friendly description**: with main keyword in first line + timestamps
 
-### Animation-Style Scenes
-
-Scene descriptions are designed for cartoon visuals:
-
-- *"Chibi character rage-typing on a tiny laptop while papers fly everywhere"*
-- *"Two stick figures in a heated debate with thought bubbles full of chaos"*
-- *"Character doing the surprised Pikachu face as explosions happen behind"*
-- *"Rubber hose cartoon brain running in circles with tiny gears flying off"*
+> **No API key?** The pipeline falls back to high-quality template-based scripts automatically — no configuration needed.
 
 ---
 
-## 🎨 Animation Styles Supported
+## 🎙️ Female Voice Rotation
 
-The pipeline is designed around these visual styles (via Pexels query optimisation):
+12 professional female neural voices rotate across runs for channel variety:
 
-| Style | Description |
-|-------|-------------|
-| **2D Cartoon** | Classic flat animation with bold outlines |
-| **Chibi Anime** | Small, cute characters with oversized expressions |
-| **Pixel Art** | 8-bit/16-bit retro game sprites |
-| **Rubber Hose** | Classic 1930s-style squiggly limbs |
-| **Stick Figures** | Minimalist with maximum attitude |
-| **Minimalist Blob** | Simple shapes with huge personality |
+| Voice | Accent | Style |
+|-------|--------|-------|
+| Sara Neural | US English | Cheerful, energetic |
+| Aria Neural | US English | Friendly, conversational |
+| Jenny Neural | US English | Professional, clear |
+| Michelle Neural | US English | Natural, warm |
+| Cora Neural | US English | Engaging, friendly |
+| Elizabeth Neural | US English | Clear, authoritative |
+| Sonia Neural | British English | Professional |
+| Libby Neural | British English | Friendly |
+| Natasha Neural | Australian English | Energetic |
+| Clara Neural | Canadian English | Warm |
+| Neerja Neural | Indian English | Professional |
+| Emily Neural | Irish English | Charming |
+
+All voices use +5% speed rate for energetic food content delivery.
 
 ---
 
-## ⚙️ Configuration
+## 📊 Viral Optimization Features
 
-All settings are in `config.py`. Key comedy-specific options:
+Every video is automatically optimised for maximum engagement:
 
-```python
-VIDEO_DURATION_TARGET = 55       # Slightly longer for comedy timing
-ANIMATION_STYLE = "2D cartoon"
-COMEDY_LEVEL = "maximum"
-COMEDY_SOUND_EFFECTS = True
-PUNCHLINE_ZOOM = True            # Zoom on punchlines
-MEME_CAPTIONS = True             # Meme-style captions
+### Hook Strategy
+- First 1-3 seconds must grab attention (curiosity gap or shocking food fact)
+- Pattern interrupts to prevent scroll-past
+- Emotional trigger in the opening
 
-# Subtitle colours (comedy palette)
-SUBTITLE_HIGHLIGHT_COLOR = "#FF4500"   # orange-red punch
-SUBTITLE_SECONDARY_COLOR = "#FFD700"   # gold laughs
-SUBTITLE_ACCENT_COLOR = "#00FF7F"      # spring green
-SUBTITLE_ALL_CAPS = True
-SUBTITLE_POP_SCALE = 1.25             # bigger pop for emphasis
-SUBTITLE_FONT_SIZE = 92
-```
+### CTA Placement
+- **25% mark**: Like CTA
+- **50% mark**: Subscribe CTA  
+- **75% mark**: Comment CTA
+- **Near end**: Share CTA
+
+### Tags Strategy (15-30 tags)
+- Broad tags: `cooking`, `recipes`, `food`
+- Niche tags: topic-specific ingredients and techniques
+- Trending hashtags: `#FoodHacks`, `#CookingTips`, `#RecipeIdeas`
+
+### Thumbnail Design
+- Warm food-appetising gradient backgrounds
+- Food emoji matched to the specific topic
+- Bold white text with black stroke (readable at 1/4 size)
+- Accent badge: VIRAL! / EASY! / 5-MIN / SECRET / HACK / MUST TRY!
 
 ---
 
@@ -170,24 +179,36 @@ SUBTITLE_FONT_SIZE = 92
 
 ```
 annimation.github.io/
-├── config.py               # Central configuration
-├── requirements.txt        # Python dependencies
-├── index.html              # Landing page / setup wizard
+├── config.py                  # Central configuration (API keys, settings)
+├── requirements.txt           # Python dependencies
 ├── src/
-│   ├── pipeline.py         # Main orchestrator
-│   ├── scriptwriter.py     # Comedy script generator (30+ hooks!)
-│   ├── trending.py         # Comedy-scored trending topics
-│   ├── tts.py              # Expressive TTS voice acting
-│   ├── video_creator.py    # Animation-style video assembly
-│   ├── thumbnail.py        # Comedy animation thumbnails
-│   └── uploader.py         # YouTube Data API v3 uploader
+│   ├── pipeline.py            # Main orchestrator
+│   ├── trending.py            # Food topic discovery
+│   ├── scriptwriter.py        # OpenRouter AI + template script generation
+│   ├── tts.py                 # Female-only Edge TTS with voice rotation
+│   ├── video_creator.py       # Multi-source food video assembly
+│   ├── thumbnail.py           # Food-focused thumbnail generator
+│   └── uploader.py            # YouTube upload
 ├── tests/
-│   ├── test_scriptwriter.py
-│   └── test_uploader.py
+│   ├── test_scriptwriter.py   # Script generation tests
+│   └── test_uploader.py       # Upload tests
 └── .github/workflows/
-    ├── automation.yml      # Cron pipeline (every 6 hours)
-    ├── tests.yml           # Test runner
-    └── pages.yml           # GitHub Pages deployment
+    ├── automation.yml         # Pipeline: runs every 6 hours
+    └── tests.yml              # CI: runs on every push
+```
+
+---
+
+## ⚙️ Configuration
+
+All settings are in `config.py`. Key settings:
+
+```python
+YOUTUBE_CATEGORY_ID = "26"      # Howto & Style
+VIDEO_DURATION_TARGET = 55      # seconds (optimal for Shorts retention)
+TTS_VOICE_ROTATE = True         # rotate female voices each run
+TTS_RATE = "+5%"                # slightly faster for energy
+OPENROUTER_MODEL = "openai/gpt-4o-mini"  # cost-effective AI model
 ```
 
 ---
@@ -195,33 +216,25 @@ annimation.github.io/
 ## 🧪 Running Tests
 
 ```bash
-pip install pytest requests
 python -m pytest tests/ -v
 ```
 
 ---
 
-## 🤝 Contributing
+## 📦 Dependencies
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. We welcome:
-
-- New comedy hook templates
-- New body pattern styles
-- Animation style improvements
-- Better thumbnail designs
-- Bug fixes
+| Package | Purpose |
+|---------|---------|
+| `edge-tts` | Microsoft neural TTS (female voices) |
+| `moviepy` | Video assembly and editing |
+| `Pillow` | Thumbnail generation |
+| `requests` | Stock media API calls (Pexels, Pixabay, Unsplash) |
+| `httpx` | OpenRouter AI API calls |
+| `pydub` | Audio normalization |
+| `google-api-python-client` | YouTube upload |
 
 ---
 
-## 📄 License
+## �� License
 
 MIT — see [LICENSE](LICENSE).
-
----
-
-## ⚠️ Disclaimer
-
-- This project uses the **YouTube Data API v3** — ensure your content complies with [YouTube's Terms of Service](https://www.youtube.com/t/terms).
-- Stock footage is sourced from [Pexels](https://www.pexels.com/license/) under their free license.
-- Comedy scripts are template-generated and do not target, mock, or harm any individual.
-- The pipeline is designed for wholesome, universally appealing comedy content.

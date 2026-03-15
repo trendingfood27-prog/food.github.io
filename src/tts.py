@@ -1,20 +1,19 @@
 """
-tts.py — Text-to-speech generation for the Funny Animation Shorts Factory.
+tts.py — Text-to-speech generation for the Food Making Videos Factory.
 
 Converts narration script text to an MP3 audio file and returns the file
 path together with the audio duration in seconds.  Completely free — no
 API keys required.
 
 Primary engine: edge-tts (Microsoft Edge neural voices — natural, high quality)
-Fallback engine: gTTS (Google's free TTS — works offline)
 
-Comedy optimisation features:
-- Comedy-optimised voice selection: prefers expressive, energetic voices
+Food content optimisation features:
+- Female-only professional voice selection for consistent narration style
 - Text sanitisation to strip any markup before synthesis
 - Post-generation loudness normalization via pydub
 - Rotating voice selection: a different neural voice is chosen each run
   using a time-based seed so the channel sounds varied and fresh.
-- Slightly faster TTS rate (+5%) for comedy energy and pacing
+- Slightly faster TTS rate (+5%) for energy and engagement
 """
 
 import asyncio
@@ -30,52 +29,43 @@ import config
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Comedy-optimised voice pool — energetic, expressive neural voices that
-# deliver comedy scripts with the right energy.  Ordered by energy level
-# (most expressive first) within each gender group.
+# Female-only voice pool — professional, engaging neural voices designed
+# for food content narration.  Ordered by energy level within each accent group.
 # ---------------------------------------------------------------------------
 _VOICE_POOL: list[dict] = [
-    # --- High-energy / expressive female voices (great for comedy delivery) ---
-    {"name": "en-US-SaraNeural",         "gender": "female", "style": "cheerful",  "energy": "high"},
-    {"name": "en-US-AriaNeural",         "gender": "female", "style": "chat",      "energy": "high"},
-    {"name": "en-US-JennyNeural",        "gender": "female", "style": "newscast",  "energy": "high"},
-    {"name": "en-US-MichelleNeural",     "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-US-CoraNeural",         "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-US-ElizabethNeural",    "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-GB-SoniaNeural",        "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-GB-LibbyNeural",        "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-AU-NatashaNeural",      "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-CA-ClaraNeural",        "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-IN-NeerjaNeural",       "gender": "female", "style": "natural",   "energy": "medium"},
-    {"name": "en-IE-EmilyNeural",        "gender": "female", "style": "natural",   "energy": "medium"},
-    # --- High-energy / expressive male voices (great for comedy delivery) ---
-    {"name": "en-US-TonyNeural",         "gender": "male",   "style": "natural",   "energy": "high"},
-    {"name": "en-US-DavisNeural",        "gender": "male",   "style": "chat",      "energy": "high"},
-    {"name": "en-US-JasonNeural",        "gender": "male",   "style": "natural",   "energy": "high"},
-    {"name": "en-US-GuyNeural",          "gender": "male",   "style": "newscast",  "energy": "medium"},
-    {"name": "en-US-ChristopherNeural",  "gender": "male",   "style": "newscast",  "energy": "medium"},
-    {"name": "en-US-EricNeural",         "gender": "male",   "style": "natural",   "energy": "medium"},
-    {"name": "en-US-BrandonNeural",      "gender": "male",   "style": "natural",   "energy": "medium"},
-    {"name": "en-GB-RyanNeural",         "gender": "male",   "style": "natural",   "energy": "medium"},
-    {"name": "en-GB-ThomasNeural",       "gender": "male",   "style": "natural",   "energy": "medium"},
-    {"name": "en-AU-WilliamNeural",      "gender": "male",   "style": "natural",   "energy": "medium"},
-    {"name": "en-CA-LiamNeural",         "gender": "male",   "style": "natural",   "energy": "medium"},
-    {"name": "en-IN-PrabhatNeural",      "gender": "male",   "style": "natural",   "energy": "medium"},
+    # --- US English female voices ---
+    {"name": "en-US-SaraNeural",         "gender": "female", "style": "cheerful",  "energy": "high",   "accent": "US"},
+    {"name": "en-US-AriaNeural",         "gender": "female", "style": "chat",      "energy": "high",   "accent": "US"},
+    {"name": "en-US-JennyNeural",        "gender": "female", "style": "newscast",  "energy": "high",   "accent": "US"},
+    {"name": "en-US-MichelleNeural",     "gender": "female", "style": "natural",   "energy": "medium", "accent": "US"},
+    {"name": "en-US-CoraNeural",         "gender": "female", "style": "natural",   "energy": "medium", "accent": "US"},
+    {"name": "en-US-ElizabethNeural",    "gender": "female", "style": "natural",   "energy": "medium", "accent": "US"},
+    # --- British English female voices ---
+    {"name": "en-GB-SoniaNeural",        "gender": "female", "style": "natural",   "energy": "medium", "accent": "GB"},
+    {"name": "en-GB-LibbyNeural",        "gender": "female", "style": "natural",   "energy": "medium", "accent": "GB"},
+    # --- Australian English female voices ---
+    {"name": "en-AU-NatashaNeural",      "gender": "female", "style": "natural",   "energy": "medium", "accent": "AU"},
+    # --- Canadian English female voices ---
+    {"name": "en-CA-ClaraNeural",        "gender": "female", "style": "natural",   "energy": "medium", "accent": "CA"},
+    # --- Indian English female voices ---
+    {"name": "en-IN-NeerjaNeural",       "gender": "female", "style": "natural",   "energy": "medium", "accent": "IN"},
+    # --- Irish English female voices ---
+    {"name": "en-IE-EmilyNeural",        "gender": "female", "style": "natural",   "energy": "medium", "accent": "IE"},
 ]
 
-# High-energy voices get priority weighting in comedy selection
+# High-energy voices get priority weighting in food content selection
 _HIGH_ENERGY_VOICES = [v["name"] for v in _VOICE_POOL if v.get("energy") == "high"]
 _ALL_VOICES = [v["name"] for v in _VOICE_POOL]
 
 
 def pick_voice() -> str:
-    """Return a comedy-optimised voice name from ``_VOICE_POOL``.
+    """Return a food-content-optimised female voice name from ``_VOICE_POOL``.
 
-    Comedy selection strategy:
-    - Uses a time-based hour index to rotate through voices each run
-    - High-energy / expressive voices (marked ``energy: high``) are preferred
-      and selected 70% of the time; the rest of the pool fills the remaining 30%
-    - Alternates naturally between male and female voices
+    Selection strategy:
+    - Uses a time-based index that changes every run to rotate through voices
+    - High-energy / expressive voices are preferred and selected 70% of the time
+    - All voices are female for consistent professional narration
+    - Rotates accent variety for a global English-speaking audience
 
     Returns:
         The ``en-*-*Neural`` voice name string accepted by edge-tts.
@@ -83,18 +73,19 @@ def pick_voice() -> str:
     if not getattr(config, "TTS_VOICE_ROTATE", True):
         return config.TTS_VOICE
 
-    hour_index = int(time.time() // 3600)
-    # 70% chance: pick from high-energy voices for better comedy delivery
-    rng = random.Random(hour_index)  # noqa: S311
+    # Use a finer granularity (15 minutes) for faster rotation across pipeline runs
+    rotation_index = int(time.time() // 900)
+    rng = random.Random(rotation_index)  # noqa: S311
     if _HIGH_ENERGY_VOICES and rng.random() < 0.70:
-        voice_name = _HIGH_ENERGY_VOICES[hour_index % len(_HIGH_ENERGY_VOICES)]
+        voice_name = _HIGH_ENERGY_VOICES[rotation_index % len(_HIGH_ENERGY_VOICES)]
     else:
-        voice_name = _ALL_VOICES[hour_index % len(_ALL_VOICES)]
+        voice_name = _ALL_VOICES[rotation_index % len(_ALL_VOICES)]
 
     voice_entry = next((v for v in _VOICE_POOL if v["name"] == voice_name), _VOICE_POOL[0])
     logger.info(
-        "Comedy voice selected: %s (%s, %s, energy=%s)",
-        voice_entry["name"], voice_entry["gender"], voice_entry["style"], voice_entry.get("energy", "medium"),
+        "Food narration voice selected: %s (%s accent, %s, energy=%s)",
+        voice_entry["name"], voice_entry.get("accent", "US"), voice_entry["style"],
+        voice_entry.get("energy", "medium"),
     )
     return voice_entry["name"]
 
@@ -184,11 +175,10 @@ async def _generate_edge_tts(text: str, output_path: str, voice: str, rate: str)
 
 
 def generate_speech(script_text: str) -> tuple[Path, float]:
-    """Generate TTS audio for *script_text* using a comedy-optimised voice.
+    """Generate TTS audio for *script_text* using a professional female food narrator voice.
 
-    Tries Microsoft Edge's free neural TTS (edge-tts) first for natural,
-    high-quality audio.  Falls back to Google's gTTS if edge-tts is
-    unavailable or fails.
+    Uses Microsoft Edge's free neural TTS (edge-tts) with female-only voices
+    for consistent, professional food content narration.
 
     Args:
         script_text: The narration text to convert to speech.
@@ -198,18 +188,17 @@ def generate_speech(script_text: str) -> tuple[Path, float]:
         :class:`pathlib.Path` pointing to the generated MP3 file.
 
     Raises:
-        RuntimeError: If all TTS engines fail.
+        RuntimeError: If edge-tts fails.
     """
     tmp_file = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
     audio_path = Path(tmp_file.name)
     tmp_file.close()
 
-    logger.info("Generating comedy TTS for %d characters of script text…", len(script_text))
+    logger.info("Generating food narration TTS for %d characters of script text…", len(script_text))
 
     clean_text = _clean_text_for_tts(script_text)
     logger.debug("Cleaned TTS text (%d chars): %s…", len(clean_text), clean_text[:80])
 
-    # --- Primary: edge-tts (free Microsoft neural voice) ---
     try:
         import edge_tts  # type: ignore[import]  # noqa: F401 — check availability before asyncio.run
 
@@ -222,37 +211,17 @@ def generate_speech(script_text: str) -> tuple[Path, float]:
                 config.TTS_RATE,
             )
         )
-        logger.info("Comedy TTS generated via edge-tts (voice: %s)", voice)
+        logger.info("Food narration TTS generated via edge-tts (voice: %s)", voice)
     except Exception as edge_exc:  # noqa: BLE001
-        logger.warning("edge-tts failed (%s); falling back to gTTS", edge_exc)
-
-        # --- Fallback: gTTS ---
-        try:
-            from gtts import gTTS  # type: ignore[import]
-        except ImportError as exc:
-            audio_path.unlink(missing_ok=True)
-            raise RuntimeError(
-                "Neither edge-tts nor gTTS is installed — "
-                "run: pip install edge-tts gTTS"
-            ) from exc
-
-        try:
-            tts = gTTS(
-                text=clean_text,
-                lang=config.TTS_LANGUAGE,
-                slow=False,
-            )
-            tts.save(str(audio_path))
-            logger.info("Comedy TTS generated via gTTS (lang: %s)", config.TTS_LANGUAGE)
-        except Exception as gtts_exc:
-            audio_path.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"Both TTS engines failed — edge-tts: {edge_exc}; gTTS: {gtts_exc}"
-            ) from gtts_exc
+        audio_path.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"edge-tts failed: {edge_exc}. "
+            "Ensure edge-tts is installed: pip install edge-tts"
+        ) from edge_exc
 
     if getattr(config, "TTS_VOLUME_NORMALIZE", True):
         _normalize_audio(audio_path)
 
     duration = _get_audio_duration(audio_path)
-    logger.info("Comedy TTS audio saved to '%s' (%.2f s)", audio_path, duration)
+    logger.info("Food narration TTS audio saved to '%s' (%.2f s)", audio_path, duration)
     return audio_path, duration

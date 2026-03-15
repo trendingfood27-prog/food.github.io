@@ -1,17 +1,17 @@
 """
-video_creator.py — Build a vertical YouTube Shorts video for the Funny Animation Shorts Factory.
+video_creator.py — Build a vertical YouTube Shorts video for the Food Making Videos Factory.
 
-Assembles animation-style footage from the Pexels API, TTS audio, and
-animated meme-style captions using MoviePy.
+Assembles food footage from multiple stock media sources (Pexels, Pixabay, Unsplash),
+TTS audio, and bold captions using MoviePy.
 
 Workflow:
-1. Fetch cartoon/animation stock video clips from the Pexels API for each scene.
-2. Resize / crop each clip to 1080 × 1920 (portrait).
-3. Apply animation-style colour grading (brighter, more saturated).
-4. Concatenate clips with crossfade transitions.
-5. Overlay TTS audio with optional background music.
-6. Burn bold meme-style captions with neon pill backgrounds.
-7. Apply comic-style speed ramps (speed up mundane moments, slow for punchlines).
+1. Fetch food-themed stock video clips from rotating stock sources (Pexels, Pixabay) for each scene.
+2. Use Unsplash as fallback for high-quality food photography with Ken Burns effect.
+3. Resize / crop each clip to 1080 × 1920 (portrait).
+4. Apply warm, vibrant colour grading for food appeal.
+5. Concatenate clips with crossfade transitions.
+6. Overlay TTS audio with optional background music.
+7. Burn bold, engaging captions with warm pill backgrounds.
 8. Apply fade-in / fade-out.
 9. Export as high-quality H.264/AAC MP4.
 """
@@ -44,26 +44,29 @@ logger = logging.getLogger(__name__)
 
 _PEXELS_VIDEO_SEARCH = "https://api.pexels.com/videos/search"
 _PEXELS_IMAGE_SEARCH = "https://api.pexels.com/v1/search"
+_PIXABAY_VIDEO_SEARCH = "https://pixabay.com/api/videos/"
+_PIXABAY_IMAGE_SEARCH = "https://pixabay.com/api/"
+_UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos"
 
 # ---------------------------------------------------------------------------
-# Animation-themed Pexels search query suffixes — appended to scene descriptions
-# to prefer cartoon-like, colourful, and animated-looking stock footage.
+# Food-themed search query suffixes — appended to scene descriptions to prefer
+# close-up food photography, cooking action shots, and kitchen environments.
 # ---------------------------------------------------------------------------
-_ANIMATION_QUERY_SUFFIXES = ["cartoon", "animated", "colorful", "comic", "fun"]
-_ANIMATION_FALLBACK_QUERIES = [
-    "cartoon animation colorful",
-    "funny animation cartoon",
-    "colorful animated character",
-    "comedy sketch colorful",
-    "animated background colorful",
-    "cute cartoon character",
-    "funny colorful background",
+_FOOD_QUERY_SUFFIXES = ["food", "cooking", "recipe", "kitchen", "chef"]
+_FOOD_FALLBACK_QUERIES = [
+    "food cooking close up",
+    "chef cooking kitchen",
+    "fresh ingredients recipe",
+    "delicious food preparation",
+    "cooking pan sizzle",
+    "food plating presentation",
+    "kitchen cooking tutorial",
+    "fresh vegetables cutting",
+    "meat grilling cooking",
+    "baking bread oven",
 ]
 
 
-# ---------------------------------------------------------------------------
-# Pexels helpers
-# ---------------------------------------------------------------------------
 def _pexels_headers() -> dict[str, str]:
     """Return the Pexels API authorisation header."""
     if not config.PEXELS_API_KEY:
@@ -71,15 +74,15 @@ def _pexels_headers() -> dict[str, str]:
     return {"Authorization": config.PEXELS_API_KEY}
 
 
-def _make_animation_query(scene: str) -> str:
-    """Build an animation-themed Pexels search query from a scene description.
+def _make_food_query(scene: str) -> str:
+    """Build a food-themed search query from a scene description.
 
-    Appends a rotation of animation-friendly suffix keywords so the returned
-    footage looks more cartoon-like and colourful rather than generic stock.
+    Appends a rotation of food-friendly suffix keywords so returned
+    footage shows cooking, ingredients, and food preparation.
     The suffix rotates hourly for variety across runs.
     """
-    suffix = _ANIMATION_QUERY_SUFFIXES[int(math.floor(
-        (len(scene) + int(__import__("time").time()) // 3600) % len(_ANIMATION_QUERY_SUFFIXES)
+    suffix = _FOOD_QUERY_SUFFIXES[int(math.floor(
+        (len(scene) + int(__import__("time").time()) // 3600) % len(_FOOD_QUERY_SUFFIXES)
     ))]
     # Strip scene descriptions to a short, searchable phrase
     words = scene.split()[:6]
@@ -90,8 +93,8 @@ def _make_animation_query(scene: str) -> str:
 def _search_pexels_video(query: str, per_page: int = 5) -> list[str]:
     """Return a list of downloadable video URLs from Pexels for *query*.
 
-    Tries the animation-themed query first; if fewer than 2 results come
-    back, falls back to a broader animation fallback query.  Prefers the
+    Tries the food-themed query first; if fewer than 2 results come
+    back, falls back to a broader food fallback query.  Prefers the
     highest-resolution HD file for each video result.
     """
     per_page = getattr(config, "PEXELS_PER_PAGE", per_page)
@@ -129,30 +132,76 @@ def _search_pexels_video(query: str, per_page: int = 5) -> list[str]:
             logger.warning("Pexels video search failed for '%s': %s", q, exc)
             return []
 
-    # Try the scene query first
-    animation_query = _make_animation_query(query)
-    urls = _fetch(animation_query)
+    # Try the food query first
+    food_query = _make_food_query(query)
+    urls = _fetch(food_query)
 
-    # If insufficient results, try a broader animation fallback
+    # If insufficient results, try Pixabay as secondary source
     if len(urls) < 2:
-        fallback_q = random.choice(_ANIMATION_FALLBACK_QUERIES)
-        logger.info("Broadening Pexels search from '%s' to '%s'", animation_query, fallback_q)
+        pixabay_urls = _search_pixabay_video(food_query, per_page=3)
+        if pixabay_urls:
+            logger.info("Using Pixabay as secondary source for '%s'", food_query)
+            urls = pixabay_urls + urls
+
+    # If still insufficient, try a broader food fallback
+    if len(urls) < 2:
+        fallback_q = random.choice(_FOOD_FALLBACK_QUERIES)
+        logger.info("Broadening search from '%s' to '%s'", food_query, fallback_q)
         urls = _fetch(fallback_q) or urls
 
     return urls
 
 
+def _search_pixabay_video(query: str, per_page: int = 5) -> list[str]:
+    """Search Pixabay for food-related portrait videos matching *query*.
+
+    Requires ``PIXABAY_API_KEY`` to be set; returns empty list gracefully
+    if the key is absent or the request fails.
+    """
+    api_key = getattr(config, "PIXABAY_API_KEY", None)
+    if not api_key:
+        return []
+    try:
+        resp = requests.get(
+            _PIXABAY_VIDEO_SEARCH,
+            params={
+                "key": api_key,
+                "q": query,
+                "video_type": "film",
+                "per_page": per_page,
+                "safesearch": "true",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+        urls: list[str] = []
+        for hit in data.get("hits", []):
+            videos = hit.get("videos", {})
+            for quality in ("medium", "small", "large", "tiny"):
+                video_data = videos.get(quality, {})
+                url = video_data.get("url")
+                if url:
+                    urls.append(url)
+                    break
+        logger.debug("Pixabay video search for '%s': %d results", query, len(urls))
+        return urls
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Pixabay video search failed for '%s': %s", query, exc)
+        return []
+
+
 def _search_pexels_image(query: str) -> str | None:
     """Return the URL of a portrait photo from Pexels for *query*.
 
-    Prefers colourful / animation-friendly imagery by appending "colorful".
+    Prefers food-vibrant imagery by appending "food" to the query.
     """
     try:
-        colorful_query = f"{query} colorful"
+        food_query = f"{query} food"
         resp = requests.get(
             _PEXELS_IMAGE_SEARCH,
             headers=_pexels_headers(),
-            params={"query": colorful_query, "per_page": 3, "orientation": "portrait", "size": "large"},
+            params={"query": food_query, "per_page": 3, "orientation": "portrait", "size": "large"},
             timeout=15,
         )
         resp.raise_for_status()
@@ -162,6 +211,33 @@ def _search_pexels_image(query: str) -> str | None:
             return photos[0]["src"].get("large2x", photos[0]["src"]["large"])
     except Exception as exc:  # noqa: BLE001
         logger.warning("Pexels image search failed for '%s': %s", query, exc)
+    return None
+
+
+def _search_unsplash_image(query: str) -> str | None:
+    """Return the URL of a portrait food photo from Unsplash for *query*.
+
+    Requires ``UNSPLASH_ACCESS_KEY`` to be set; returns None gracefully
+    if the key is absent or the request fails.
+    """
+    api_key = getattr(config, "UNSPLASH_ACCESS_KEY", None)
+    if not api_key:
+        return None
+    try:
+        resp = requests.get(
+            _UNSPLASH_SEARCH,
+            headers={"Authorization": f"Client-ID {api_key}"},
+            params={"query": query, "per_page": 3, "orientation": "portrait"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+        results = data.get("results", [])
+        if results:
+            urls_obj = results[0].get("urls", {})
+            return urls_obj.get("regular") or urls_obj.get("full")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Unsplash image search failed for '%s': %s", query, exc)
     return None
 
 
@@ -498,18 +574,18 @@ def create_video(
     audio_duration: float,
     hook_text: str = "",
 ) -> Path:
-    """Create a vertical 1080 × 1920 YouTube Shorts MP4 comedy animation video.
+    """Create a vertical 1080 × 1920 YouTube Shorts MP4 food making video.
 
-    Fetches animation-themed stock footage (colorful, cartoon-like searches),
-    applies vibrant colour grading, adds meme-style captions, and exports a
-    polished comedy short.
+    Fetches food-themed stock footage from Pexels, Pixabay, and Unsplash,
+    applies warm vibrant colour grading, adds engaging captions, and exports a
+    polished food short optimised for YouTube Shorts.
 
     Args:
         audio_path:     Path to the TTS MP3 audio file.
         script_text:    Full narration script (hook + body + CTA).  Every
                         spoken word is captioned in a single lower-third band.
-        scenes:         List of scene description strings (used as Pexels
-                        search queries, animation-enhanced).
+        scenes:         List of scene description strings (used as food stock
+                        search queries for Pexels, Pixabay, and Unsplash).
         audio_duration: Duration in seconds of the TTS audio.
         hook_text:      Kept for API compatibility.
 
@@ -539,9 +615,9 @@ def create_video(
     video_clips: list[Any] = []
 
     try:
-        # ------------------------------------------------------------------
-        # 1. Fetch animation-themed stock footage for each scene
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 1. Fetch food-themed stock footage for each scene
+    # ------------------------------------------------------------------
         time_per_scene = target_duration / max(len(scenes), 1)
         for scene in scenes:
             clip_added = False
@@ -573,7 +649,12 @@ def create_video(
                     logger.warning("Failed to load video from Pexels: %s", exc)
 
             if not clip_added:
-                img_url = _search_pexels_image(scene)
+                # Try Unsplash as additional image fallback
+                unsplash_url = _search_unsplash_image(f"{scene} food")
+                if not unsplash_url:
+                    img_url = _search_pexels_image(scene)
+                else:
+                    img_url = unsplash_url
                 if img_url:
                     try:
                         img_path = _download_file(img_url, ".jpg")
@@ -585,13 +666,13 @@ def create_video(
                         video_clips.append(ic)
                         clip_added = True
                     except Exception as exc:  # noqa: BLE001
-                        logger.warning("Failed to load image from Pexels: %s", exc)
+                        logger.warning("Failed to load image from stock source: %s", exc)
 
             if not clip_added:
-                logger.warning("No footage for scene '%s'; using colorful gradient placeholder", scene)
+                logger.warning("No footage for scene '%s'; using warm gradient placeholder", scene)
                 scene_dur = time_per_scene + transition_dur
-                # Use a bright, vibrant placeholder for animation feel
-                placeholder = ColorClip(size=(w, h), color=(60, 20, 120)).set_duration(scene_dur)
+                # Warm food-themed gradient placeholder
+                placeholder = ColorClip(size=(w, h), color=(180, 80, 20)).set_duration(scene_dur)
                 video_clips.append(placeholder)
 
         # ------------------------------------------------------------------
@@ -636,7 +717,7 @@ def create_video(
             base = base.set_audio(tts_audio)
 
         # ------------------------------------------------------------------
-        # 4. Build meme-style captions — bold comedy colours, neon glow pills
+        # 4. Build engaging captions — bold warm-toned word bursts for food content
         # ------------------------------------------------------------------
         caption_clips = _build_caption_clips(
             script_text, target_duration, w, h, start_offset=0.0
@@ -657,18 +738,18 @@ def create_video(
         final = CompositeVideoClip(layers, size=(w, h)) if len(layers) > 1 else base
 
         # ------------------------------------------------------------------
-        # 5b. Animation-style colour grade — brighter, more saturated palette
-        #     Boosts saturation and contrast for the cartoon/animation look.
+        # 5b. Warm food colour grade — vibrant, appetising palette
+        #     Boosts warm tones (reds and ambers) for appetite appeal.
         # ------------------------------------------------------------------
         if getattr(config, "VIDEO_COLOR_GRADE", True):
             try:
                 import numpy as np
 
                 def _animation_grade_frame(frame: Any) -> Any:
-                    """Apply a vibrant animation-style colour grade.
+                    """Apply a warm food-style colour grade.
 
-                    Boosts saturation and contrast to give a brighter, more
-                    cartoon-like look compared to flat stock footage.
+                    Boosts warm tones (reds and ambers) for appetite appeal
+                    while maintaining natural food colours.
                     """
                     f = frame.astype("float32") / 255.0
                     # Stronger S-curve contrast for punchy animation feel
@@ -684,7 +765,7 @@ def create_video(
                     return (f * 255).astype("uint8")
 
                 final = final.fl_image(_animation_grade_frame)
-                logger.debug("Animation colour grade applied (saturation boost + vibrant contrast)")
+                logger.debug("Food colour grade applied (warm tone boost + vibrant contrast)")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Colour grade skipped: %s", exc)
 
