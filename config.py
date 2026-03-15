@@ -28,7 +28,16 @@ MUSIC_ENABLED: bool = True                   # Set False to disable background m
 MUSIC_VOLUME: float = BG_MUSIC_VOLUME        # Background music volume (0.0–1.0 relative to narration)
 MUSIC_FADE_DURATION: float = 1.0             # Fade-in and fade-out duration in seconds
 MUSIC_CACHE_DIR: str = "cache/music"         # Local cache directory for downloaded tracks
-FREESOUND_API_KEY: str | None = os.getenv("FREESOUND_API_KEY")  # Freesound.org API key (free registration)
+
+# Music source fallback chain — tried in order until one succeeds.
+# Remove or reorder entries to customise behaviour.
+#   "pixabay"          — Pixabay Music API (requires PIXABAY_API_KEY)
+#   "free_music_archive" — Free Music Archive API (no API key required)
+#   "freesound"        — Freesound API (requires FREESOUND_API_KEY, optional)
+#   "silence"          — Locally-generated silent WAV (always succeeds)
+MUSIC_SOURCE_PRIORITY: list = ["pixabay", "free_music_archive", "freesound", "silence"]
+
+FREESOUND_API_KEY: str | None = os.getenv("FREESOUND_API_KEY")  # Optional — freesound.org API key
 
 # ---------------------------------------------------------------------------
 # Food content style settings
