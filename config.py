@@ -34,8 +34,19 @@ MUSIC_CACHE_DIR: str = "cache/music"         # Local cache directory for downloa
 #   "pixabay"          — Pixabay Music API (requires PIXABAY_API_KEY)
 #   "free_music_archive" — Free Music Archive API (no API key required)
 #   "freesound"        — Freesound API (requires FREESOUND_API_KEY, optional)
+#   "incompetech"      — Kevin MacLeod CC BY tracks (no API key required)
+#   "ccmixter"         — ccMixter Creative Commons community music (no API key)
+#   "local_cache"      — Random rotation from previously-downloaded cache files
 #   "silence"          — Locally-generated silent WAV (always succeeds)
-MUSIC_SOURCE_PRIORITY: list = ["pixabay", "free_music_archive", "freesound", "silence"]
+MUSIC_SOURCE_PRIORITY: list = [
+    "pixabay",
+    "free_music_archive",
+    "freesound",
+    "incompetech",
+    "ccmixter",
+    "local_cache",
+    "silence",
+]
 
 FREESOUND_API_KEY: str | None = os.getenv("FREESOUND_API_KEY")  # Optional — freesound.org API key
 
@@ -124,3 +135,29 @@ MAX_VIDEOS_PER_RUN: int = 1
 # OpenRouter AI settings
 OPENROUTER_MODEL: str = "openai/gpt-4o-mini"  # cost-effective model for script generation
 OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+
+# ---------------------------------------------------------------------------
+# Footage alternative sources — additional video fallbacks beyond Pexels
+# ---------------------------------------------------------------------------
+COVERR_ENABLED: bool = True       # Coverr.co free stock videos (no API key required)
+VIDEVO_ENABLED: bool = True       # Videvo.net free stock footage (no API key required)
+
+# YouTube Data API key (optional) — enables CC video search as footage source
+YOUTUBE_DATA_API_KEY: str | None = os.getenv("YOUTUBE_DATA_API_KEY")
+
+# ---------------------------------------------------------------------------
+# Virality optimization engine
+# ---------------------------------------------------------------------------
+VIRALITY_OPTIMIZATION_ENABLED: bool = True  # Log virality score report before upload
+VIRALITY_MIN_SCORE: float = 0.0             # Minimum score to proceed (0.0 = always proceed)
+
+# ---------------------------------------------------------------------------
+# Viral tags generator — multi-tier tagging system
+# ---------------------------------------------------------------------------
+VIRAL_TAGS_ENABLED: bool = True   # Use advanced viral_tags_generator for 30-50 tags
+VIRAL_TAGS_TARGET_COUNT: int = 45  # Target number of tags (30-50 range)
+
+# ---------------------------------------------------------------------------
+# Enhanced script writing — step-by-step instructions
+# ---------------------------------------------------------------------------
+ENHANCED_SCRIPT_ENABLED: bool = True  # Use enhanced_scriptwriter for step-by-step scripts

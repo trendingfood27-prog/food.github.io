@@ -75,9 +75,20 @@ def run_pipeline() -> None:
         # Step 2: Generate professional food script via OpenRouter AI
         # ------------------------------------------------------------------
         logger.info("[2/6] \u270d\ufe0f  Writing script — generating AI food script for: '%s'…", topic)
-        from src.scriptwriter import generate_script  # noqa: PLC0415
 
-        script_data = generate_script(topic)
+        if getattr(config, "ENHANCED_SCRIPT_ENABLED", True):
+            try:
+                from src.enhanced_scriptwriter import generate_enhanced_script  # noqa: PLC0415
+                script_data = generate_enhanced_script(topic)
+                logger.info("      Enhanced step-by-step script generated")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Enhanced scriptwriter failed (%s) — using standard scriptwriter", exc)
+                from src.scriptwriter import generate_script  # noqa: PLC0415
+                script_data = generate_script(topic)
+        else:
+            from src.scriptwriter import generate_script  # noqa: PLC0415
+            script_data = generate_script(topic)
+
         title = script_data["title"]
         script_text = script_data["script"]
         caption_text = script_data["caption_script"]
@@ -86,6 +97,7 @@ def run_pipeline() -> None:
         tags = script_data["tags"]
         description = script_data["description"]
         logger.info("      Food video title: '%s'", title)
+        logger.info("      Tags count: %d", len(tags))
 
         # ------------------------------------------------------------------
         # Step 3: Text-to-speech (professional female voice narration)
@@ -126,6 +138,25 @@ def run_pipeline() -> None:
 
         thumb_path = create_thumbnail(title, topic)
         logger.info("      Thumbnail path: '%s'", thumb_path)
+
+        # ------------------------------------------------------------------
+        # Step 5.5: Virality optimization analysis
+        # ------------------------------------------------------------------
+        if getattr(config, "VIRALITY_OPTIMIZATION_ENABLED", True):
+            logger.info("[5.5/6] \U0001f4ca Optimizing — running virality analysis…")
+            try:
+                from src.virality_optimizer import analyze_virality  # noqa: PLC0415
+                report = analyze_virality(script_data, topic, music_path=music_path)
+                logger.info("\n%s", report.format_report())
+                min_score = getattr(config, "VIRALITY_MIN_SCORE", 0.0)
+                if report.overall_score < min_score:
+                    logger.warning(
+                        "      Virality score %.1f%% is below minimum %.1f%% — "
+                        "proceeding anyway (increase VIRALITY_MIN_SCORE to enforce)",
+                        report.overall_percentage, min_score * 100,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("      Virality optimization failed: %s — continuing", exc)
 
         # ------------------------------------------------------------------
         # Step 6: Upload to YouTube

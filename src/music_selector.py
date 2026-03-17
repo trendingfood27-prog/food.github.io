@@ -179,12 +179,19 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
 
     # --- Fallback chain (respects MUSIC_SOURCE_PRIORITY order) ---
     source_priority = getattr(config, "MUSIC_SOURCE_PRIORITY",
-                              ["pixabay", "free_music_archive", "freesound", "silence"])
+                              ["pixabay", "free_music_archive", "freesound",
+                               "incompetech", "ccmixter", "local_cache", "silence"])
+
+    # Determine primary scene mood for no-API sources
+    mood = classify_scene_type(0, len(scenes))
 
     _source_handlers = {
         "pixabay": lambda: _download_from_pixabay(search_query, cache_dir, cache_key),
         "free_music_archive": lambda: _download_from_free_music_archive(search_query, cache_dir, cache_key),
         "freesound": lambda: _download_from_freesound(search_query, cache_dir, cache_key),
+        "incompetech": lambda: _download_from_incompetech(mood, cache_dir, cache_key),
+        "ccmixter": lambda: _download_from_ccmixter(mood, cache_dir, cache_key),
+        "local_cache": lambda: _get_local_cached_track(cache_dir),
         "silence": lambda: _create_silence_fallback(cache_dir, cache_key),
     }
 
@@ -468,4 +475,66 @@ def _create_silence_fallback(cache_dir: Path, cache_key: str) -> Path | None:
         return out_path
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not create silence fallback audio: %s", exc)
+        return None
+
+
+def _download_from_incompetech(mood: str, cache_dir: Path, cache_key: str) -> Path | None:
+    """Download a royalty-free CC BY track from Incompetech (no API key required).
+
+    Delegates to :func:`src.music_alternatives.download_incompetech`.
+
+    Args:
+        mood:      Scene mood — ``'intro'``, ``'middle'``, or ``'punchline'``.
+        cache_dir: Directory to save the downloaded file.
+        cache_key: Short hash used as part of the cached filename.
+
+    Returns:
+        Path to the downloaded MP3, or ``None`` on failure.
+    """
+    try:
+        from src.music_alternatives import download_incompetech  # noqa: PLC0415
+        return download_incompetech(mood, cache_dir, cache_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Incompetech music source failed: %s", exc)
+        return None
+
+
+def _download_from_ccmixter(mood: str, cache_dir: Path, cache_key: str) -> Path | None:
+    """Download a Creative Commons track from ccMixter (no API key required).
+
+    Delegates to :func:`src.music_alternatives.download_ccmixter`.
+
+    Args:
+        mood:      Scene mood string.
+        cache_dir: Directory to save the downloaded file.
+        cache_key: Short hash used as part of the cached filename.
+
+    Returns:
+        Path to the downloaded MP3, or ``None`` on failure.
+    """
+    try:
+        from src.music_alternatives import download_ccmixter  # noqa: PLC0415
+        return download_ccmixter(mood, cache_dir, cache_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ccMixter music source failed: %s", exc)
+        return None
+
+
+def _get_local_cached_track(cache_dir: Path) -> Path | None:
+    """Return a random previously-downloaded track from the local music cache.
+
+    Delegates to :func:`src.music_alternatives.get_local_cached_track`.
+    Provides a purely offline fallback that never makes network requests.
+
+    Args:
+        cache_dir: Directory to scan for audio files.
+
+    Returns:
+        Path to a randomly chosen ``*.mp3`` / ``*.wav`` file, or ``None``.
+    """
+    try:
+        from src.music_alternatives import get_local_cached_track  # noqa: PLC0415
+        return get_local_cached_track(cache_dir)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Local cache music source failed: %s", exc)
         return None

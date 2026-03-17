@@ -115,6 +115,12 @@ class TestGetMusicForScenes(unittest.TestCase):
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache_empty"), \
              patch("src.music_selector._download_from_free_music_archive",
                    return_value=None), \
+             patch("src.music_selector._download_from_incompetech",
+                   return_value=None), \
+             patch("src.music_selector._download_from_ccmixter",
+                   return_value=None), \
+             patch("src.music_selector._get_local_cached_track",
+                   return_value=None), \
              patch("src.music_selector._create_silence_fallback",
                    return_value=fake_silence_path) as mock_silence, \
              patch("src.music_selector.Path") as mock_path_cls:
@@ -202,6 +208,9 @@ class TestGetMusicForScenes(unittest.TestCase):
              patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
              patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache_empty"), \
              patch("src.music_selector._download_from_free_music_archive", return_value=None), \
+             patch("src.music_selector._download_from_incompetech", return_value=None), \
+             patch("src.music_selector._download_from_ccmixter", return_value=None), \
+             patch("src.music_selector._get_local_cached_track", return_value=None), \
              patch("src.music_selector._create_silence_fallback", return_value=None), \
              patch("src.music_selector.Path") as mock_path_cls:
             mock_dir = MagicMock()

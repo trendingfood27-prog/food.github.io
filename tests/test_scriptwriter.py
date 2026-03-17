@@ -118,11 +118,11 @@ class TestGenerateScript(unittest.TestCase):
                              f"Tags contain old comedy/animation keyword: {bad_tag!r}")
 
     def test_tags_reasonable_count(self):
-        """Tags should be between 5 and 30 (YouTube recommendation)."""
+        """Tags should be between 15 and 50 (YouTube allows up to 500 characters of tags)."""
         result = self.generate_script("chicken tikka masala")
         tags = result["tags"]
         self.assertGreaterEqual(len(tags), 5, "Need at least 5 tags for SEO")
-        self.assertLessEqual(len(tags), 30, "YouTube recommends no more than 30 tags")
+        self.assertLessEqual(len(tags), 50, "Tags list should not exceed 50 entries")
 
     def test_scenes_is_non_empty_list(self):
         result = self.generate_script("homemade ramen")

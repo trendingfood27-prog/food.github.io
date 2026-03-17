@@ -389,7 +389,27 @@ def _build_scenes(rng: random.Random) -> list[str]:
 
 
 def _build_tags(topic: str, rng: random.Random) -> list[str]:
-    """Generate a de-duplicated list of food/recipe tags for the topic."""
+    """Generate a de-duplicated list of food/recipe tags for the topic.
+
+    When ``VIRAL_TAGS_ENABLED`` is set in config, delegates to
+    :func:`src.viral_tags_generator.generate_viral_tags` for 30–50 optimised
+    multi-tier tags.  Falls back to the local template approach otherwise.
+    """
+    # Try viral tags generator first (produces 30-50 tags across 5 tiers)
+    if getattr(config, "VIRAL_TAGS_ENABLED", True):
+        try:
+            from src.viral_tags_generator import generate_viral_tags  # noqa: PLC0415
+            base_template_tags = _build_tags_from_template(topic, rng)
+            target = getattr(config, "VIRAL_TAGS_TARGET_COUNT", 45)
+            return generate_viral_tags(topic, existing_tags=base_template_tags, target_count=target)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("viral_tags_generator failed: %s — using template tags", exc)
+
+    return _build_tags_from_template(topic, rng)
+
+
+def _build_tags_from_template(topic: str, rng: random.Random) -> list[str]:
+    """Generate a de-duplicated list of food/recipe tags using local templates."""
     tags: list[str] = list(_BASE_TAGS)
 
     topic_lower = topic.lower()
@@ -424,7 +444,24 @@ def _build_title(topic: str, rng: random.Random) -> str:
 
 
 def _build_description(title: str, topic: str, tags: list[str]) -> str:
-    """Build an SEO-friendly YouTube description with hashtags and a subscribe CTA."""
+    """Build an SEO-friendly YouTube description with hashtags and a subscribe CTA.
+
+    When ``VIRAL_TAGS_ENABLED`` is set, delegates to
+    :func:`src.viral_tags_generator.generate_viral_description` for a richer,
+    keyword-dense description.  Falls back to the local template otherwise.
+    """
+    if getattr(config, "VIRAL_TAGS_ENABLED", True):
+        try:
+            from src.viral_tags_generator import generate_viral_description  # noqa: PLC0415
+            return generate_viral_description(topic, title, tags)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("viral_tags_generator description failed: %s — using template", exc)
+
+    return _build_description_from_template(title, topic, tags)
+
+
+def _build_description_from_template(title: str, topic: str, tags: list[str]) -> str:
+    """Build a basic SEO-friendly YouTube description using local templates."""
     hashtags = " ".join(f"#{t.replace(' ', '')}" for t in tags[:10])
     return (
         f"{title}\n\n"

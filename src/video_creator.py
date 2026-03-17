@@ -674,6 +674,34 @@ def create_video(
                         logger.warning("Failed to load image from stock source: %s", exc)
 
             if not clip_added:
+                logger.warning("No footage for scene '%s'; trying alternative sources", scene)
+                # Try footage_alternatives (Coverr, Videvo, AI placeholder)
+                try:
+                    from src.footage_alternatives import fetch_fallback_clip  # noqa: PLC0415
+
+                    scene_dur = time_per_scene + transition_dur
+                    alt_path = fetch_fallback_clip(
+                        scene_description=scene,
+                        duration=scene_dur,
+                        width=w,
+                        height=h,
+                        scene_index=scenes.index(scene) if scene in scenes else 0,
+                    )
+                    if alt_path and alt_path.suffix.lower() == ".mp4":
+                        downloaded.append(alt_path)
+                        vc = VideoFileClip(str(alt_path), audio=False)
+                        if vc.duration < scene_dur:
+                            loops = math.ceil(scene_dur / vc.duration)
+                            vc = vc.loop(n=loops)
+                        vc = vc.subclip(0, scene_dur)
+                        vc = _resize_clip(vc, w, h)
+                        video_clips.append(vc)
+                        clip_added = True
+                        logger.info("Used alternative footage source for scene '%s'", scene)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Footage alternatives failed for scene '%s': %s", scene, exc)
+
+            if not clip_added:
                 logger.warning("No footage for scene '%s'; using warm gradient placeholder", scene)
                 scene_dur = time_per_scene + transition_dur
                 # Warm food-themed gradient placeholder
