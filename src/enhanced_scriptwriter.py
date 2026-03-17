@@ -28,11 +28,21 @@ Usage::
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 import random
 import re
 from typing import Any, TypedDict
 
-from src.scriptwriter import generate_script
+import config
+from src.scriptwriter import (
+    _fetch_preparation_steps_via_openrouter,
+    _strip_markdown_fences,
+    generate_script,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -62,9 +72,10 @@ class EnhancedScriptData(TypedDict, total=False):
     beat_markers: list[dict[str, Any]]
 
 
-# ---------------------------------------------------------------------------
-# Template ingredient banks keyed by topic keyword
-# ---------------------------------------------------------------------------
+# Minimum number of steps / ingredients required from an AI response before
+# we consider it valid.  Mirrors the same threshold used in scriptwriter.py.
+_MIN_AI_STEPS = 2
+_MIN_AI_INGREDIENTS = 2
 
 _INGREDIENT_BANKS: dict[str, list[str]] = {
     "pasta": [
@@ -235,6 +246,159 @@ def _estimate_timing(topic: str, num_steps: int) -> tuple[int, int, int]:
     return prep, cook, prep + cook
 
 
+_OPENROUTER_TIMING_SYSTEM_PROMPT = (
+    "You are a culinary expert. "
+    "Return ONLY a valid JSON object with integer minute values and no extra text."
+)
+
+_OPENROUTER_INGREDIENTS_SYSTEM_PROMPT = (
+    "You are a culinary expert. "
+    "Return ONLY a valid JSON array of ingredient strings with no extra text, preamble, or markdown fences."
+)
+
+
+def _fetch_timing_via_openrouter(topic: str) -> tuple[int, int, int] | None:
+    """Fetch realistic prep, cook, and total time for *topic* from OpenRouter AI.
+
+    Returns:
+        Tuple of (prep_time, cook_time, total_time) in minutes, or ``None``
+        when the API key is missing or the call fails.
+    """
+    api_key = getattr(config, "OPENROUTER_API_KEY", None) or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        import httpx  # type: ignore[import]
+    except ImportError:
+        return None
+
+    model = getattr(config, "OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    user_prompt = (
+        f"What is the realistic preparation and cooking time for making '{topic}'? "
+        f"Return ONLY a JSON object with integer minute values, for example: "
+        f'{{"prep_time": 10, "cook_time": 20, "total_time": 30}}'
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/itsShahAmar/annimation.github.io",
+        "X-Title": "Food Making Videos Factory",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _OPENROUTER_TIMING_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 100,
+    }
+
+    try:
+        with httpx.Client(timeout=15.0) as client:  # type: ignore[attr-defined]
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        content = _strip_markdown_fences(data["choices"][0]["message"]["content"].strip())
+        timing = json.loads(content)
+
+        if isinstance(timing, dict):
+            prep = int(timing.get("prep_time", 0))
+            cook = int(timing.get("cook_time", 0))
+            total = int(timing.get("total_time", 0))
+            if prep > 0 and cook > 0:
+                # Some models omit total_time or return 0; compute it from parts.
+                if total <= 0:
+                    total = prep + cook
+                logger.info(
+                    "Fetched real timing for '%s' from OpenRouter: prep=%d cook=%d total=%d",
+                    topic, prep, cook, total,
+                )
+                return prep, cook, total
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to fetch timing for '%s': %s — falling back to estimated timing",
+            topic, exc,
+        )
+
+    return None
+
+
+def _fetch_ingredients_via_openrouter(topic: str) -> list[str] | None:
+    """Fetch a real ingredient list for *topic* from OpenRouter AI.
+
+    Returns:
+        A list of ingredient strings, or ``None`` when the API key is missing
+        or the call fails.
+    """
+    api_key = getattr(config, "OPENROUTER_API_KEY", None) or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        import httpx  # type: ignore[import]
+    except ImportError:
+        return None
+
+    model = getattr(config, "OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    user_prompt = (
+        f"List 6-8 main ingredients with quantities for making '{topic}'. "
+        f"Each entry must be a short string naming the ingredient and its amount, "
+        f"for example: '400g pasta', '3 cloves garlic, minced'. "
+        f"Return ONLY a JSON array of strings."
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/itsShahAmar/annimation.github.io",
+        "X-Title": "Food Making Videos Factory",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _OPENROUTER_INGREDIENTS_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 300,
+    }
+
+    try:
+        with httpx.Client(timeout=15.0) as client:  # type: ignore[attr-defined]
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        content = _strip_markdown_fences(data["choices"][0]["message"]["content"].strip())
+        ingredients = json.loads(content)
+
+        if isinstance(ingredients, list) and len(ingredients) >= _MIN_AI_INGREDIENTS:
+            logger.info(
+                "Fetched %d real ingredients for '%s' from OpenRouter",
+                len(ingredients), topic,
+            )
+            return [str(i).strip() for i in ingredients if str(i).strip()]
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to fetch ingredients for '%s': %s — falling back to ingredient bank",
+            topic, exc,
+        )
+
+    return None
+
+
 def _build_enhanced_script(
     base_script: str,
     steps: list[str],
@@ -296,9 +460,18 @@ def generate_enhanced_script(topic: str) -> EnhancedScriptData:
     # Get the base script from the existing scriptwriter
     base_data: dict[str, Any] = dict(generate_script(topic))
 
-    ingredients = _pick_ingredients(topic)
-    steps = _pick_steps(topic)
-    prep_time, cook_time, total_time = _estimate_timing(topic, len(steps))
+    # --- Steps: AI-generated first, template fallback ---
+    steps = _fetch_preparation_steps_via_openrouter(topic) or _pick_steps(topic)
+
+    # --- Ingredients: AI-generated first, template fallback ---
+    ingredients = _fetch_ingredients_via_openrouter(topic) or _pick_ingredients(topic)
+
+    # --- Timing: AI-generated first, template fallback ---
+    ai_timing = _fetch_timing_via_openrouter(topic)
+    if ai_timing is not None:
+        prep_time, cook_time, total_time = ai_timing
+    else:
+        prep_time, cook_time, total_time = _estimate_timing(topic, len(steps))
 
     # Select 3–4 relevant tips and 2–3 variations
     tips = random.sample(_TIPS_BANK, min(4, len(_TIPS_BANK)))

@@ -137,14 +137,114 @@ class TestGenerateEnhancedScript(unittest.TestCase):
                     self.fail(f"generate_enhanced_script({topic!r}) raised: {exc}")
 
     def test_pasta_topic_uses_pasta_template(self):
-        """Pasta topic should trigger pasta-specific steps and ingredients."""
+        """Pasta topic should produce pasta-specific steps and ingredients (via AI or template)."""
         result = self.generate_enhanced_script("pasta carbonara")
         ingredients_text = " ".join(result["ingredients"]).lower()
         steps_text = " ".join(result["steps"]).lower()
         has_pasta_ingredients = "pasta" in ingredients_text or "olive oil" in ingredients_text
         has_pasta_steps = "pasta" in steps_text or "boil" in steps_text or "al dente" in steps_text
         self.assertTrue(has_pasta_ingredients or has_pasta_steps,
-                        "Pasta topic should use pasta-specific template content")
+                        "Pasta topic should use pasta-specific content")
+
+
+class TestFetchTimingViaOpenrouter(unittest.TestCase):
+    """Tests for _fetch_timing_via_openrouter()."""
+
+    def test_returns_none_without_api_key(self):
+        """Should return None when no OPENROUTER_API_KEY is set."""
+        import importlib
+        import src.enhanced_scriptwriter as esw
+        # Patch config and env so no key is available
+        original = getattr(esw.config, "OPENROUTER_API_KEY", None)
+        esw.config.OPENROUTER_API_KEY = None
+        import os
+        saved = os.environ.pop("OPENROUTER_API_KEY", None)
+        try:
+            result = esw._fetch_timing_via_openrouter("pasta")
+            self.assertIsNone(result)
+        finally:
+            esw.config.OPENROUTER_API_KEY = original
+            if saved is not None:
+                os.environ["OPENROUTER_API_KEY"] = saved
+
+    def test_returns_tuple_on_valid_ai_response(self):
+        """Should return (prep, cook, total) tuple when API returns valid timing JSON."""
+        import src.enhanced_scriptwriter as esw
+        import json
+        from unittest.mock import patch, MagicMock
+
+        fake_resp = MagicMock()
+        fake_resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(
+                {"prep_time": 10, "cook_time": 20, "total_time": 30}
+            )}}]
+        }
+        fake_resp.raise_for_status = MagicMock()
+
+        with patch.object(esw.config, "OPENROUTER_API_KEY", "fake-key"), \
+             patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.post.return_value = fake_resp
+            result = esw._fetch_timing_via_openrouter("pasta carbonara")
+
+        self.assertIsNotNone(result)
+        prep, cook, total = result
+        self.assertEqual(prep, 10)
+        self.assertEqual(cook, 20)
+        self.assertEqual(total, 30)
+
+    def test_returns_none_on_api_failure(self):
+        """Should return None when the API call raises an exception."""
+        import src.enhanced_scriptwriter as esw
+        from unittest.mock import patch
+
+        with patch.object(esw.config, "OPENROUTER_API_KEY", "fake-key"), \
+             patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.post.side_effect = Exception("Network error")
+            result = esw._fetch_timing_via_openrouter("pasta carbonara")
+
+        self.assertIsNone(result)
+
+
+class TestFetchIngredientsViaOpenrouter(unittest.TestCase):
+    """Tests for _fetch_ingredients_via_openrouter()."""
+
+    def test_returns_none_without_api_key(self):
+        """Should return None when no OPENROUTER_API_KEY is set."""
+        import src.enhanced_scriptwriter as esw
+        import os
+        original = getattr(esw.config, "OPENROUTER_API_KEY", None)
+        esw.config.OPENROUTER_API_KEY = None
+        saved = os.environ.pop("OPENROUTER_API_KEY", None)
+        try:
+            result = esw._fetch_ingredients_via_openrouter("pasta")
+            self.assertIsNone(result)
+        finally:
+            esw.config.OPENROUTER_API_KEY = original
+            if saved is not None:
+                os.environ["OPENROUTER_API_KEY"] = saved
+
+    def test_returns_list_on_valid_ai_response(self):
+        """Should return a list of strings when API returns valid ingredients JSON."""
+        import src.enhanced_scriptwriter as esw
+        import json
+        from unittest.mock import patch, MagicMock
+
+        fake_ingredients = ["400g spaghetti", "200g guanciale", "4 egg yolks", "50g Pecorino"]
+        fake_resp = MagicMock()
+        fake_resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(fake_ingredients)}}]
+        }
+        fake_resp.raise_for_status = MagicMock()
+
+        with patch.object(esw.config, "OPENROUTER_API_KEY", "fake-key"), \
+             patch("httpx.Client") as mock_client:
+            mock_client.return_value.__enter__.return_value.post.return_value = fake_resp
+            result = esw._fetch_ingredients_via_openrouter("pasta carbonara")
+
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+        self.assertIn("400g spaghetti", result)
 
 
 if __name__ == "__main__":
