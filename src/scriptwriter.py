@@ -506,12 +506,114 @@ IMPORTANT: Return ONLY a valid JSON object (no markdown fences, no extra text) w
 }
 Respond with the JSON object only. Do not include any explanation, preamble, or markdown code blocks."""
 
+_OPENROUTER_STEPS_SYSTEM_PROMPT = """You are a culinary expert with deep knowledge of cooking techniques and recipes.
+Return ONLY a valid JSON array of strings with no extra text, preamble, or markdown fences."""
 
-def _generate_script_via_openrouter(topic: str) -> dict[str, Any] | None:
+
+def _strip_markdown_fences(content: str) -> str:
+    """Strip leading/trailing markdown code fences from an API response string.
+
+    Some models wrap their JSON responses in triple-backtick fences even when
+    instructed not to.  This helper normalises those responses before JSON
+    parsing so both :func:`_fetch_preparation_steps_via_openrouter` and
+    :func:`_generate_script_via_openrouter` handle them consistently.
+    """
+    if content.startswith("```"):
+        content = re.sub(r"^```[a-z]*\n?", "", content, flags=re.MULTILINE)
+        content = re.sub(r"\n?```$", "", content, flags=re.MULTILINE)
+    return content.strip()
+
+
+def _fetch_preparation_steps_via_openrouter(topic: str) -> list[str] | None:
+    """Fetch real, topic-specific preparation steps from OpenRouter AI.
+
+    Makes a lightweight API call to retrieve 4-6 genuine preparation steps
+    for the given food topic.  These steps are then injected into the script
+    generation prompt so every video contains unique, topic-accurate content
+    rather than the same pre-defined generic instructions.
+
+    Args:
+        topic: The food topic to research preparation steps for.
+
+    Returns:
+        A list of preparation step strings, or None if unavailable.
+    """
+    api_key = getattr(config, "OPENROUTER_API_KEY", None) or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        import httpx  # type: ignore[import]
+    except ImportError:
+        return None
+
+    model = getattr(config, "OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    user_prompt = (
+        f"List 4-6 real, specific preparation steps for making '{topic}'. "
+        f"Each step must be a short, concrete instruction that names an actual technique, "
+        f"ingredient, or timing relevant to {topic}. "
+        f"Return ONLY a JSON array of strings, for example: "
+        f'["Step one description", "Step two description", ...]'
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/itsShahAmar/annimation.github.io",
+        "X-Title": "Food Making Videos Factory",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _OPENROUTER_STEPS_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 400,
+    }
+
+    try:
+        with httpx.Client(timeout=20.0) as client:  # type: ignore[attr-defined]
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        content = _strip_markdown_fences(data["choices"][0]["message"]["content"].strip())
+
+        steps = json.loads(content)
+        # Accept 2 or more steps: the prompt requests 4-6 but we tolerate a
+        # shorter list rather than discarding genuinely useful AI-generated steps.
+        if isinstance(steps, list) and len(steps) >= 2:
+            logger.info(
+                "Fetched %d real preparation steps for '%s' from OpenRouter",
+                len(steps), topic,
+            )
+            return [str(s).strip() for s in steps if str(s).strip()]
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to fetch preparation steps for '%s': %s — script will use generic guidance",
+            topic, exc,
+        )
+
+    return None
+
+
+def _generate_script_via_openrouter(
+    topic: str,
+    preparation_steps: list[str] | None = None,
+) -> dict[str, Any] | None:
     """Call the OpenRouter AI API to generate a professional food script.
 
     Args:
         topic: The food topic to generate a script for.
+        preparation_steps: Optional list of real preparation steps fetched from
+            OpenRouter.  When provided, the steps are embedded into the prompt so
+            the AI builds the script around genuine, topic-specific instructions
+            instead of inventing generic ones.
 
     Returns:
         A dict with script data keys, or None if the API call fails.
@@ -530,6 +632,26 @@ def _generate_script_via_openrouter(topic: str) -> dict[str, Any] | None:
     model = getattr(config, "OPENROUTER_MODEL", "openai/gpt-4o-mini")
     base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
+    # Build the preparation-steps section only when real steps are available.
+    # This replaces the generic "mention techniques" instruction with actual steps
+    # so the AI produces unique, topic-accurate content for every video.
+    if preparation_steps:
+        steps_lines = "\n".join(f"  {i + 1}. {s}" for i, s in enumerate(preparation_steps))
+        steps_section = (
+            f"\n\nReal preparation steps to weave naturally into the script "
+            f"(use these exact steps — do NOT substitute generic instructions):\n"
+            f"{steps_lines}"
+        )
+        step_instruction = (
+            f"6. Incorporate the REAL preparation steps provided below — "
+            f"do NOT replace them with generic cooking instructions\n"
+        )
+    else:
+        steps_section = ""
+        step_instruction = (
+            f"6. Mention real techniques, ingredients, or food science related to {topic}\n"
+        )
+
     user_prompt = (
         f"Create a viral food making video script for this topic: '{topic}'\n\n"
         f"The script must:\n"
@@ -538,9 +660,10 @@ def _generate_script_via_openrouter(topic: str) -> dict[str, Any] | None:
         f"3. Include a subscribe CTA at around 50% of the script\n"
         f"4. Include a comment CTA at around 75% of the script\n"
         f"5. End with a share CTA\n"
-        f"6. Mention real techniques, ingredients, or food science related to {topic}\n"
+        f"{step_instruction}"
         f"7. Be enthusiastic but credible — like a knowledgeable food creator\n"
-        f"8. Target: English-speaking home cooks who love food content\n\n"
+        f"8. Target: English-speaking home cooks who love food content\n"
+        f"{steps_section}\n\n"
         f"Return only the JSON object as specified in the system prompt."
     )
 
@@ -567,12 +690,7 @@ def _generate_script_via_openrouter(topic: str) -> dict[str, Any] | None:
             resp.raise_for_status()
 
         data = resp.json()
-        content = data["choices"][0]["message"]["content"].strip()
-
-        # Strip markdown code fences if present
-        if content.startswith("```"):
-            content = re.sub(r"^```[a-z]*\n?", "", content, flags=re.MULTILINE)
-            content = re.sub(r"\n?```$", "", content, flags=re.MULTILINE)
+        content = _strip_markdown_fences(data["choices"][0]["message"]["content"].strip())
 
         script_data = json.loads(content)
         logger.info("OpenRouter script generated successfully for topic: '%s'", topic)
@@ -641,7 +759,17 @@ def _build_script_from_template(topic: str) -> ScriptData:
 def generate_script(topic: str) -> ScriptData:
     """Generate a complete food script for the given *topic*.
 
-    Tries OpenRouter AI first for professional, engaging scripts.
+    Tries OpenRouter AI first for professional, engaging scripts.  When an API
+    key is available the function performs two lightweight calls:
+
+    1. **Preparation-steps fetch** — asks OpenRouter for the real, specific
+       preparation steps for this particular food topic.  This ensures every
+       video script is grounded in genuine, topic-accurate instructions rather
+       than the same pre-defined generic steps.
+    2. **Script generation** — sends those real steps to OpenRouter together
+       with the full scriptwriting prompt so the AI weaves them naturally into
+       the narration.
+
     Falls back to template-based generation when the API is unavailable.
 
     Args:
@@ -654,7 +782,12 @@ def generate_script(topic: str) -> ScriptData:
     topic = topic.strip() or "delicious home cooking"
 
     # --- Primary: OpenRouter AI ---
-    ai_result = _generate_script_via_openrouter(topic)
+    # Step 1: fetch real preparation steps for this specific topic so the
+    # generated script is not a copy of the same generic instructions every run.
+    preparation_steps = _fetch_preparation_steps_via_openrouter(topic)
+
+    # Step 2: generate the full script, passing the real steps when available.
+    ai_result = _generate_script_via_openrouter(topic, preparation_steps=preparation_steps)
     if ai_result:
         try:
             title = str(ai_result.get("title", ""))[:100] or _build_title(topic, random.Random())
