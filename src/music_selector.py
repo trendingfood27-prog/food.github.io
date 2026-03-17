@@ -19,6 +19,7 @@ import hashlib
 import logging
 import re
 import time
+import unicodedata
 import wave
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -66,19 +67,26 @@ _FMA_RETRY_STATUSES = frozenset({429, 503})
 def _sanitize_topic(topic: str) -> str:
     """Strip characters from *topic* that could break API query strings.
 
-    Replaces any character that is not a word character (letter, digit, or
-    underscore) or ASCII space with a single space, then collapses runs of
-    whitespace so the result is a clean, human-readable phrase.
+    Normalises Unicode to its closest ASCII equivalent (e.g. ``'é'`` →
+    ``'e'``) so that accented characters in topic names do not produce
+    non-ASCII query strings that cause some APIs (e.g. Free Music Archive)
+    to return HTTP 404.  After transliteration, any remaining character
+    that is not an ASCII word character or space is replaced with a space
+    and runs of whitespace are collapsed.
 
     Args:
         topic: Raw topic string from the script generator (may contain
                punctuation, special characters, or Unicode symbols).
 
     Returns:
-        A sanitised version of *topic* suitable for inclusion in a URL
-        query parameter.
+        A sanitised ASCII-only version of *topic* suitable for inclusion
+        in a URL query parameter.
     """
-    sanitized = re.sub(r"[^\w\s]", " ", topic)
+    # Decompose Unicode codepoints and drop the non-ASCII combining marks
+    # so accented letters become plain ASCII (e.g. "América" → "America").
+    nfkd = unicodedata.normalize("NFKD", topic)
+    ascii_text = nfkd.encode("ascii", "ignore").decode("ascii")
+    sanitized = re.sub(r"[^\w\s]", " ", ascii_text)
     return " ".join(sanitized.split())
 
 

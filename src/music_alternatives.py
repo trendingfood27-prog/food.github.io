@@ -19,6 +19,7 @@ import logging
 import random
 import time
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import requests
 
@@ -40,9 +41,9 @@ _INCOMPETECH_TRACKS: dict[str, list[dict]] = {
             "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Fluffing%20a%20Duck.mp3",
         },
         {
-            "id": "morning_routine",
-            "title": "Morning Routine",
-            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Morning%20Routine.mp3",
+            "id": "sneaky_snitch",
+            "title": "Sneaky Snitch",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sneaky%20Snitch.mp3",
         },
         {
             "id": "call_to_adventure",
@@ -110,6 +111,8 @@ def download_incompetech(mood: str, cache_dir: Path, cache_key: str) -> Path | N
 
     No API key is required.  Selects from a hand-curated list of CC BY 4.0
     licensed tracks matching the given *mood* and downloads it to *cache_dir*.
+    Starts from a track determined by the current hour for variety, then
+    falls through the remaining tracks in the list if the first choice fails.
 
     Args:
         mood:      Scene mood — one of ``'intro'``, ``'middle'``, ``'punchline'``,
@@ -123,32 +126,34 @@ def download_incompetech(mood: str, cache_dir: Path, cache_key: str) -> Path | N
     bucket_key = _MOOD_ALIAS.get(mood, "upbeat")
     tracks = _INCOMPETECH_TRACKS.get(bucket_key, _INCOMPETECH_TRACKS["upbeat"])
 
-    # Rotate hourly so successive pipeline runs use different tracks
-    idx = int(time.time() // 3600) % len(tracks)
-    track = tracks[idx]
+    # Rotate hourly for variety, but fall through all tracks on failure
+    start_idx = int(time.time() // 3600) % len(tracks)
+    ordered = tracks[start_idx:] + tracks[:start_idx]
 
-    out_path = cache_dir / f"{cache_key}_incompetech_{track['id']}.mp3"
-    if out_path.exists():
-        logger.info("Reusing cached Incompetech track '%s': %s", track["title"], out_path)
-        return out_path
-
-    try:
-        with requests.get(track["url"], stream=True, timeout=30) as r:
-            r.raise_for_status()
-            with open(out_path, "wb") as fh:
-                for chunk in r.iter_content(chunk_size=8192):
-                    fh.write(chunk)
-        logger.info(
-            "Downloaded Incompetech track '%s' (CC BY Kevin MacLeod) → %s",
-            track["title"],
-            out_path,
-        )
-        return out_path
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to download Incompetech track '%s': %s", track["title"], exc)
+    for track in ordered:
+        out_path = cache_dir / f"{cache_key}_incompetech_{track['id']}.mp3"
         if out_path.exists():
-            out_path.unlink(missing_ok=True)
-        return None
+            logger.info("Reusing cached Incompetech track '%s': %s", track["title"], out_path)
+            return out_path
+
+        try:
+            with requests.get(track["url"], stream=True, timeout=30) as r:
+                r.raise_for_status()
+                with open(out_path, "wb") as fh:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        fh.write(chunk)
+            logger.info(
+                "Downloaded Incompetech track '%s' (CC BY Kevin MacLeod) → %s",
+                track["title"],
+                out_path,
+            )
+            return out_path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to download Incompetech track '%s': %s", track["title"], exc)
+            if out_path.exists():
+                out_path.unlink(missing_ok=True)
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +224,13 @@ def download_ccmixter(mood: str, cache_dir: Path, cache_key: str) -> Path | None
                     break
             if not mp3_url:
                 continue
+
+            # Normalise to HTTP to avoid SSL certificate verification failures
+            # that can occur with the ccmixter.org HTTPS endpoint in some
+            # environments (e.g. CI runners without updated CA bundles).
+            parsed = urlparse(mp3_url)
+            if parsed.scheme == "https" and parsed.netloc == "ccmixter.org":
+                mp3_url = urlunparse(parsed._replace(scheme="http"))
 
             upload_id = item.get("upload_id", "unknown")
             out_path = cache_dir / f"{cache_key}_ccmixter_{upload_id}.mp3"

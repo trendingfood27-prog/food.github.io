@@ -541,6 +541,18 @@ class TestSanitizeTopic(unittest.TestCase):
     def test_plain_words_unchanged(self):
         self.assertEqual(self.sanitize("energetic cooking"), "energetic cooking")
 
+    def test_strips_non_ascii_accented_characters(self):
+        """Accented letters are transliterated to ASCII equivalents."""
+        self.assertEqual(self.sanitize("América toluca"), "America toluca")
+        self.assertEqual(self.sanitize("café crème"), "cafe creme")
+        self.assertEqual(self.sanitize("sauté onion"), "saute onion")
+
+    def test_non_ascii_only_string_returns_cleaned(self):
+        """String made entirely of non-ASCII chars becomes empty or ASCII-safe."""
+        result = self.sanitize("日本料理")
+        # After stripping non-ASCII, result should contain only ASCII (possibly empty)
+        self.assertTrue(result.isascii())
+
 
 class TestGetMusicForScenesWavCache(unittest.TestCase):
     """Tests that the cache lookup recognises WAV silence-fallback files."""
