@@ -244,5 +244,221 @@ class TestFoodTopicVariety(unittest.TestCase):
         self.assertTrue(result["script"].strip())
 
 
+class TestFetchPreparationSteps(unittest.TestCase):
+    """Tests for _fetch_preparation_steps_via_openrouter() — OpenRouter step fetch."""
+
+    def test_returns_none_without_api_key(self):
+        """Without an API key the function must return None gracefully."""
+        from unittest.mock import patch
+        from src.scriptwriter import _fetch_preparation_steps_via_openrouter
+
+        import config as cfg
+        with patch.object(cfg, "OPENROUTER_API_KEY", None), \
+             patch.dict("os.environ", {}, clear=True):
+            result = _fetch_preparation_steps_via_openrouter("pasta carbonara")
+            self.assertIsNone(result)
+
+    def test_returns_list_of_strings_on_success(self):
+        """When the API returns a valid JSON array the function returns a list of strings."""
+        import json
+        from unittest.mock import MagicMock, patch
+        from src.scriptwriter import _fetch_preparation_steps_via_openrouter
+        import config as cfg
+
+        fake_steps = [
+            "Season chicken thighs generously with salt and pepper",
+            "Sear skin-side down in a cold pan over medium heat for 12 minutes",
+            "Flip and cook for 3 minutes on the other side",
+            "Rest for 5 minutes before serving",
+        ]
+        fake_response = MagicMock()
+        fake_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(fake_steps)}}]
+        }
+        fake_response.raise_for_status = MagicMock()
+
+        fake_client = MagicMock()
+        fake_client.__enter__ = MagicMock(return_value=fake_client)
+        fake_client.__exit__ = MagicMock(return_value=False)
+        fake_client.post.return_value = fake_response
+
+        with patch.object(cfg, "OPENROUTER_API_KEY", "test-key"), \
+             patch("httpx.Client", return_value=fake_client):
+            result = _fetch_preparation_steps_via_openrouter("crispy chicken thighs")
+        self.assertIsInstance(result, list)
+        self.assertGreaterEqual(len(result), 2)
+        for step in result:
+            self.assertIsInstance(step, str)
+            self.assertTrue(step.strip(), "Step must not be blank")
+
+    def test_returns_none_on_api_error(self):
+        """If the API call raises an exception the function returns None without crashing."""
+        from unittest.mock import MagicMock, patch
+        from src.scriptwriter import _fetch_preparation_steps_via_openrouter
+        import config as cfg
+
+        fake_client = MagicMock()
+        fake_client.__enter__ = MagicMock(return_value=fake_client)
+        fake_client.__exit__ = MagicMock(return_value=False)
+        fake_client.post.side_effect = RuntimeError("network error")
+
+        with patch.object(cfg, "OPENROUTER_API_KEY", "test-key"), \
+             patch("httpx.Client", return_value=fake_client):
+            result = _fetch_preparation_steps_via_openrouter("biryani")
+        self.assertIsNone(result)
+
+    def test_returns_none_on_invalid_json(self):
+        """If the API returns non-JSON content the function returns None without crashing."""
+        from unittest.mock import MagicMock, patch
+        from src.scriptwriter import _fetch_preparation_steps_via_openrouter
+        import config as cfg
+
+        fake_response = MagicMock()
+        fake_response.json.return_value = {
+            "choices": [{"message": {"content": "not valid json at all"}}]
+        }
+        fake_response.raise_for_status = MagicMock()
+
+        fake_client = MagicMock()
+        fake_client.__enter__ = MagicMock(return_value=fake_client)
+        fake_client.__exit__ = MagicMock(return_value=False)
+        fake_client.post.return_value = fake_response
+
+        with patch.object(cfg, "OPENROUTER_API_KEY", "test-key"), \
+             patch("httpx.Client", return_value=fake_client):
+            result = _fetch_preparation_steps_via_openrouter("naan bread")
+        self.assertIsNone(result)
+
+    def test_strips_markdown_fences_from_response(self):
+        """The function must strip ```json ... ``` code fences before parsing."""
+        import json
+        from unittest.mock import MagicMock, patch
+        from src.scriptwriter import _fetch_preparation_steps_via_openrouter
+        import config as cfg
+
+        fake_steps = ["Rinse lentils under cold water", "Simmer with turmeric for 20 minutes"]
+        fenced_content = f"```json\n{json.dumps(fake_steps)}\n```"
+
+        fake_response = MagicMock()
+        fake_response.json.return_value = {
+            "choices": [{"message": {"content": fenced_content}}]
+        }
+        fake_response.raise_for_status = MagicMock()
+
+        fake_client = MagicMock()
+        fake_client.__enter__ = MagicMock(return_value=fake_client)
+        fake_client.__exit__ = MagicMock(return_value=False)
+        fake_client.post.return_value = fake_response
+
+        with patch.object(cfg, "OPENROUTER_API_KEY", "test-key"), \
+             patch("httpx.Client", return_value=fake_client):
+            result = _fetch_preparation_steps_via_openrouter("dal tadka")
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+
+
+class TestGenerateScriptWithPreparationSteps(unittest.TestCase):
+    """Tests that generate_script() passes real preparation steps to the script generator."""
+
+    def test_generate_script_uses_preparation_steps_when_available(self):
+        """generate_script must call _generate_script_via_openrouter with the fetched steps."""
+        import json
+        from unittest.mock import MagicMock, patch
+        from src import scriptwriter
+        import config as cfg
+
+        fake_steps = [
+            "Toast whole spices in dry pan until fragrant",
+            "Marinate meat overnight in yogurt and spices",
+            "Layer rice and meat with saffron milk",
+            "Dum-cook on low heat for 25 minutes",
+        ]
+        fake_script_data = {
+            "title": "Perfect Biryani \U0001f35b",
+            "hook": "This biryani secret will change everything.",
+            "script": (
+                "Toast whole spices until fragrant. Hit like if you are taking notes. "
+                "Marinate overnight in yogurt and spices. Subscribe for more recipes. "
+                "Layer with saffron milk and dum-cook for 25 minutes. Comment below. "
+                "Share with a biryani lover."
+            ),
+            "scenes": ["scene1", "scene2", "scene3", "scene4"],
+            "tags": ["biryani", "Pakistani food", "rice recipe"],
+            "description": "Food Making Videos Factory biryani guide.",
+        }
+
+        fake_steps_response = MagicMock()
+        fake_steps_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(fake_steps)}}]
+        }
+        fake_steps_response.raise_for_status = MagicMock()
+
+        fake_script_response = MagicMock()
+        fake_script_response.json.return_value = {
+            "choices": [{"message": {"content": json.dumps(fake_script_data)}}]
+        }
+        fake_script_response.raise_for_status = MagicMock()
+
+        fake_client = MagicMock()
+        fake_client.__enter__ = MagicMock(return_value=fake_client)
+        fake_client.__exit__ = MagicMock(return_value=False)
+        # First call returns steps, second call returns script
+        fake_client.post.side_effect = [fake_steps_response, fake_script_response]
+
+        with patch.object(cfg, "OPENROUTER_API_KEY", "test-key"), \
+             patch("httpx.Client", return_value=fake_client):
+            result = scriptwriter.generate_script("biryani")
+        self.assertEqual(result["title"], "Perfect Biryani \U0001f35b")
+        self.assertIn("biryani", result["script"].lower())
+        # Verify the preparation steps were fetched (2 calls: steps + script)
+        self.assertEqual(fake_client.post.call_count, 2)
+
+    def test_generate_script_falls_back_when_steps_fetch_fails(self):
+        """generate_script still produces a valid script when preparation-step fetch fails."""
+        import json
+        from unittest.mock import MagicMock, patch
+        from src import scriptwriter
+        import config as cfg
+
+        fake_script_data = {
+            "title": "Perfect Pasta \U0001f35d",
+            "hook": "This pasta secret changes everything.",
+            "script": (
+                "Use starchy pasta water as your sauce base. Hit like now. "
+                "Toss off heat to emulsify. Subscribe for more. "
+                "Finish with grated Pecorino. Comment below. Share this."
+            ),
+            "scenes": ["scene1", "scene2", "scene3", "scene4"],
+            "tags": ["pasta", "cooking", "recipe"],
+            "description": "Food Making Videos Factory pasta guide.",
+        }
+
+        call_count = [0]
+
+        def post_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # Steps fetch fails
+                raise RuntimeError("network timeout")
+            # Script generation succeeds
+            resp = MagicMock()
+            resp.json.return_value = {
+                "choices": [{"message": {"content": json.dumps(fake_script_data)}}]
+            }
+            resp.raise_for_status = MagicMock()
+            return resp
+
+        fake_client = MagicMock()
+        fake_client.__enter__ = MagicMock(return_value=fake_client)
+        fake_client.__exit__ = MagicMock(return_value=False)
+        fake_client.post.side_effect = post_side_effect
+
+        with patch.object(cfg, "OPENROUTER_API_KEY", "test-key"), \
+             patch("httpx.Client", return_value=fake_client):
+            result = scriptwriter.generate_script("pasta carbonara")
+        self.assertIn("title", result)
+        self.assertTrue(result["script"].strip())
+
+
 if __name__ == "__main__":
     unittest.main()
