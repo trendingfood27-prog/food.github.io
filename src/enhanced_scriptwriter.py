@@ -409,27 +409,41 @@ def _build_enhanced_script(
 ) -> str:
     """Rebuild the narration script to include step-by-step structure.
 
-    Inserts numbered steps and a selection of tips into the existing base
-    script body while preserving the hook, CTAs, and punchline structure.
+    Inserts dynamically-transitioned steps and a selection of tips into the
+    existing base script body while preserving the hook, CTAs, and punchline
+    structure.  Uses engaging transition phrases instead of flat "Step N:"
+    labels for more professional, TTS-friendly narration.
 
     Args:
         base_script: Original script from generate_script().
-        steps:       Numbered step instructions.
+        steps:       Step instructions.
         ingredients: Ingredient list.
         tips:        Pro tips.
 
     Returns:
         Enhanced script string.
     """
+    # Dynamic transitions replace flat "Step 1: / Step 2:" labels
+    _TRANSITIONS = [
+        "First,",
+        "Next,",
+        "Now,",
+        "Then,",
+        "Here is the game-changing move:",
+        "The finishing touch:",
+        "And finally,",
+    ]
+
     # Find the hook (first sentence / first two sentences) and keep it
     sentences = re.split(r"(?<=[.!?])\s+", base_script.strip())
     hook_sentences = sentences[:2] if len(sentences) >= 2 else sentences
     hook_part = " ".join(hook_sentences)
 
-    # Build structured body
+    # Build structured body with dynamic transitions
     step_lines = []
-    for i, step in enumerate(steps[:6], 1):
-        step_lines.append(f"Step {i}: {step}")
+    for i, step in enumerate(steps[:6]):
+        transition = _TRANSITIONS[i] if i < len(_TRANSITIONS) else "Also,"
+        step_lines.append(f"{transition} {step}")
 
     step_block = " ".join(step_lines)
 
@@ -446,12 +460,124 @@ def _build_enhanced_script(
     return f"{hook_part} Here is exactly how to do it. {step_block} {tip} {cta_part}"
 
 
+_OPENROUTER_ENHANCED_DATA_SYSTEM_PROMPT = (
+    "You are a culinary expert. Return ONLY a valid JSON object with no extra text, preamble, or "
+    "markdown fences. CRITICAL: All steps, ingredients, and tips must be real, topic-specific, and "
+    "concrete — never generic. Steps must name exact techniques, temperatures, and timings unique "
+    "to the specific dish. Ingredients must include exact quantities. Tips must be professional "
+    "and dish-specific. NEVER output generic advice like 'build flavor in layers', 'cook until "
+    "done', or 'add seasoning'."
+)
+
+
+def _fetch_ai_enhanced_data(topic: str) -> dict[str, Any] | None:
+    """Fetch all enhanced script data in a single OpenRouter AI call.
+
+    Makes one API call to retrieve structured cooking data for *topic*:
+    6-8 detailed topic-specific preparation steps, 6-10 ingredients with
+    exact quantities, and 3-4 professional topic-specific cooking tips.
+
+    Args:
+        topic: The food topic to research.
+
+    Returns:
+        A dict with keys ``steps``, ``ingredients``, and ``tips``, or
+        ``None`` when the API key is missing or the call fails.
+    """
+    api_key = getattr(config, "OPENROUTER_API_KEY", None) or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        import httpx  # type: ignore[import]
+    except ImportError:
+        return None
+
+    model = getattr(config, "OPENROUTER_MODEL", "openai/gpt-4o-mini")
+    base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    user_prompt = (
+        f"Provide detailed cooking data for making '{topic}'. "
+        f"Return ONLY a JSON object with exactly these three keys:\n"
+        f"  \"steps\": array of 6-8 detailed, topic-specific preparation steps — each naming the "
+        f"exact technique, temperature, and timing for {topic}.\n"
+        f"  \"ingredients\": array of 6-10 ingredients with exact quantities (e.g. '400g pasta', "
+        f"'3 cloves garlic, minced') specific to {topic}.\n"
+        f"  \"tips\": array of 3-4 professional, topic-specific cooking tips for {topic}.\n"
+        f"Example format: {{\"steps\": [...], \"ingredients\": [...], \"tips\": [...]}}"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/itsShahAmar/annimation.github.io",
+        "X-Title": "Food Making Videos Factory",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": _OPENROUTER_ENHANCED_DATA_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.7,
+        "max_tokens": 900,
+    }
+
+    try:
+        with httpx.Client(timeout=25.0) as client:  # type: ignore[attr-defined]
+            resp = client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
+            resp.raise_for_status()
+
+        data = resp.json()
+        content = _strip_markdown_fences(data["choices"][0]["message"]["content"].strip())
+        result = json.loads(content)
+
+        if not isinstance(result, dict):
+            return None
+
+        steps = result.get("steps")
+        ingredients = result.get("ingredients")
+        tips = result.get("tips")
+
+        # Validate each field meets minimum quality thresholds
+        if (
+            isinstance(steps, list) and len(steps) >= _MIN_AI_STEPS
+            and isinstance(ingredients, list) and len(ingredients) >= _MIN_AI_INGREDIENTS
+            and isinstance(tips, list) and len(tips) >= 1
+        ):
+            logger.info(
+                "Fetched AI-enhanced data for '%s' from OpenRouter: "
+                "%d steps, %d ingredients, %d tips",
+                topic, len(steps), len(ingredients), len(tips),
+            )
+            return {
+                "steps": [str(s).strip() for s in steps if str(s).strip()],
+                "ingredients": [str(i).strip() for i in ingredients if str(i).strip()],
+                "tips": [str(t).strip() for t in tips if str(t).strip()],
+            }
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to fetch AI-enhanced data for '%s': %s — falling back to templates",
+            topic, exc,
+        )
+
+    return None
+
+
 def generate_enhanced_script(topic: str) -> EnhancedScriptData:
     """Generate an enhanced step-by-step food script.
 
     Calls the base ``generate_script()`` and enriches the output with
     detailed cooking steps, ingredient lists, timing estimates, tips,
     variations, and beat markers.
+
+    When the OpenRouter API key is available, a single
+    :func:`_fetch_ai_enhanced_data` call retrieves all three data sets
+    (steps, ingredients, tips) in one round-trip.  Individual AI helpers are
+    used as a secondary fallback, and keyword-matched templates are used only
+    when no API key is configured.
 
     Args:
         topic: The food topic to generate a script for.
@@ -462,11 +588,18 @@ def generate_enhanced_script(topic: str) -> EnhancedScriptData:
     # Get the base script from the existing scriptwriter
     base_data: dict[str, Any] = dict(generate_script(topic))
 
-    # --- Steps: AI-generated first, template fallback ---
-    steps = _fetch_preparation_steps_via_openrouter(topic) or _pick_steps(topic)
+    # --- Primary: single AI call for steps + ingredients + tips ---
+    ai_data = _fetch_ai_enhanced_data(topic)
 
-    # --- Ingredients: AI-generated first, template fallback ---
-    ingredients = _fetch_ingredients_via_openrouter(topic) or _pick_ingredients(topic)
+    if ai_data is not None:
+        steps: list[str] = ai_data["steps"]
+        ingredients: list[str] = ai_data["ingredients"]
+        tips: list[str] = ai_data["tips"]
+    else:
+        # Secondary fallback: individual AI calls, then keyword templates
+        steps = _fetch_preparation_steps_via_openrouter(topic) or _pick_steps(topic)
+        ingredients = _fetch_ingredients_via_openrouter(topic) or _pick_ingredients(topic)
+        tips = random.sample(_TIPS_BANK, min(4, len(_TIPS_BANK)))
 
     # --- Timing: AI-generated first, template fallback ---
     ai_timing = _fetch_timing_via_openrouter(topic)
@@ -475,8 +608,7 @@ def generate_enhanced_script(topic: str) -> EnhancedScriptData:
     else:
         prep_time, cook_time, total_time = _estimate_timing(topic, len(steps))
 
-    # Select 3–4 relevant tips and 2–3 variations
-    tips = random.sample(_TIPS_BANK, min(4, len(_TIPS_BANK)))
+    # Select 2–3 variations
     variations = random.sample(_VARIATIONS_BANK, min(3, len(_VARIATIONS_BANK)))
 
     # Build enhanced script body
