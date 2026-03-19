@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: automation-${{ github.ref }}
+  group: funny-animation-shorts-${{ github.ref }}
   cancel-in-progress: true  # Cancel stale runs so only the latest execution continues
 
 jobs:
