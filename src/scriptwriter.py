@@ -496,6 +496,13 @@ food Shorts for English-speaking audiences. Your scripts must be:
 - Include cooking tips, techniques, or food science that genuinely educates and delights
 - Natural speech patterns optimized for female voice TTS narration
 
+CRITICAL: Every script MUST contain real, topic-specific preparation steps with exact techniques,
+temperatures, and timings for the actual dish being described. NEVER use vague placeholders like
+"cook until done", "add seasoning", "prepare as usual", or "build flavor in layers". Instead,
+always specify the exact technique (e.g. "sear over high heat"), exact temperature (e.g. "at 190°C /
+375°F"), and exact timing (e.g. "for 6-7 minutes"). Scripts that recycle generic cooking advice
+unrelated to the specific topic are unacceptable.
+
 IMPORTANT: Return ONLY a valid JSON object (no markdown fences, no extra text) with these exact keys:
 {
     "title": "YouTube title (max 100 chars, include food emoji, power words)",
@@ -508,7 +515,11 @@ IMPORTANT: Return ONLY a valid JSON object (no markdown fences, no extra text) w
 Respond with the JSON object only. Do not include any explanation, preamble, or markdown code blocks."""
 
 _OPENROUTER_STEPS_SYSTEM_PROMPT = """You are a culinary expert with deep knowledge of cooking techniques and recipes.
-Return ONLY a valid JSON array of strings with no extra text, preamble, or markdown fences."""
+Return ONLY a valid JSON array of strings with no extra text, preamble, or markdown fences.
+CRITICAL: Every step must be concrete and topic-specific — name the actual technique, ingredient,
+temperature, or timing relevant to the exact dish. NEVER output generic steps like "build flavor in
+layers", "cook until done", "add seasoning", or "prepare as usual". Each step must be unique to
+the specific topic provided."""
 
 
 def _strip_markdown_fences(content: str) -> str:
@@ -528,7 +539,7 @@ def _strip_markdown_fences(content: str) -> str:
 def _fetch_preparation_steps_via_openrouter(topic: str) -> list[str] | None:
     """Fetch real, topic-specific preparation steps from OpenRouter AI.
 
-    Makes a lightweight API call to retrieve 4-6 genuine preparation steps
+    Makes a lightweight API call to retrieve 5-7 genuine preparation steps
     for the given food topic.  These steps are then injected into the script
     generation prompt so every video contains unique, topic-accurate content
     rather than the same pre-defined generic instructions.
@@ -552,7 +563,7 @@ def _fetch_preparation_steps_via_openrouter(topic: str) -> list[str] | None:
     base_url = getattr(config, "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
     user_prompt = (
-        f"List 4-6 real, specific preparation steps for making '{topic}'. "
+        f"List 5-7 real, specific preparation steps for making '{topic}'. "
         f"Each step must be a short, concrete instruction that names an actual technique, "
         f"ingredient, or timing relevant to {topic}. "
         f"Return ONLY a JSON array of strings, for example: "
@@ -573,7 +584,7 @@ def _fetch_preparation_steps_via_openrouter(topic: str) -> list[str] | None:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.7,
-        "max_tokens": 400,
+        "max_tokens": 600,
     }
 
     try:
@@ -585,7 +596,7 @@ def _fetch_preparation_steps_via_openrouter(topic: str) -> list[str] | None:
         content = _strip_markdown_fences(data["choices"][0]["message"]["content"].strip())
 
         steps = json.loads(content)
-        # Accept 2 or more steps: the prompt requests 4-6 but we tolerate a
+        # Accept 2 or more steps: the prompt requests 5-7 but we tolerate a
         # shorter list rather than discarding genuinely useful AI-generated steps.
         if isinstance(steps, list) and len(steps) >= 2:
             logger.info(
