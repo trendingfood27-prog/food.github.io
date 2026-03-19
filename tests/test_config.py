@@ -1,11 +1,13 @@
-"""tests/test_config.py — focused tests for render-speed config defaults."""
+"""tests/test_config.py -- focused tests for render-speed config defaults."""
 
 import importlib
 import os
+import sys
 
 
 def _reload_config():
-    import config
+    sys.modules.pop("config", None)
+    import config  # noqa: PLC0415
 
     return importlib.reload(config)
 
@@ -42,4 +44,3 @@ def test_fast_render_can_be_overridden(monkeypatch):
     assert config.VIDEO_BITRATE == "16000k"
     assert config.AUDIO_BITRATE == "320k"
     assert config.VIDEO_COLOR_GRADE is True
-
