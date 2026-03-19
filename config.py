@@ -32,7 +32,6 @@ MUSIC_CACHE_DIR: str = "cache/music"         # Local cache directory for downloa
 # Music source fallback chain — tried in order until one succeeds.
 # Remove or reorder entries to customise behaviour.
 #   "pixabay"          — Pixabay Music API (requires PIXABAY_API_KEY)
-#   "free_music_archive" — Free Music Archive API (no API key required)
 #   "freesound"        — Freesound API (requires FREESOUND_API_KEY, optional)
 #   "incompetech"      — Kevin MacLeod CC BY tracks (no API key required)
 #   "ccmixter"         — ccMixter Creative Commons community music (no API key)
@@ -40,7 +39,6 @@ MUSIC_CACHE_DIR: str = "cache/music"         # Local cache directory for downloa
 #   "silence"          — Locally-generated silent WAV (always succeeds)
 MUSIC_SOURCE_PRIORITY: list = [
     "pixabay",
-    "free_music_archive",
     "freesound",
     "incompetech",
     "ccmixter",

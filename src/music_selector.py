@@ -5,10 +5,9 @@ Classifies scenes by type (intro / middle / punchline) and downloads royalty-fre
 background music from free sources using a multi-source fallback chain:
 
   1. Pixabay Music API — requires ``PIXABAY_API_KEY`` (free registration at pixabay.com).
-  2. Free Music Archive API — no API key required; Creative Commons licensed tracks.
-  3. Freesound API    — optional; requires ``FREESOUND_API_KEY`` (free registration at
+  2. Freesound API    — optional; requires ``FREESOUND_API_KEY`` (free registration at
                         freesound.org/apiv2/apply/).
-  4. Local silence fallback — generates a short silent WAV file so the pipeline always
+  3. Local silence fallback — generates a short silent WAV file so the pipeline always
                               has an audio track without requiring any API key or network access.
 
 Downloaded tracks are cached locally under ``MUSIC_CACHE_DIR`` to avoid redundant
@@ -54,6 +53,8 @@ _SCENE_MOOD_MAP: dict[str, list[str]] = {
 _FREESOUND_SEARCH_URL = "https://freesound.org/apiv2/search/text/"
 _PIXABAY_API_URL = "https://pixabay.com/api/"
 _FMA_API_URL = "https://freemusicarchive.org/api/get/tracks.json"
+_SEARCH_TIMEOUT_SECONDS = 10
+_DOWNLOAD_TIMEOUT_SECONDS = 20
 
 # Retry settings for transient API failures (429 Too Many Requests, 503 Service Unavailable)
 _FMA_MAX_RETRIES = 3
@@ -143,9 +144,11 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
 
     Fallback chain (in order):
       1. Pixabay Music API (requires ``PIXABAY_API_KEY``)
-      2. Free Music Archive API (no API key required)
-      3. Freesound API (requires ``FREESOUND_API_KEY``)
-      4. Local silence generator (always succeeds)
+      2. Freesound API (requires ``FREESOUND_API_KEY``)
+      3. Incompetech (no API key required)
+      4. ccMixter (no API key required)
+      5. Local cache rotation (offline)
+      6. Local silence generator (always succeeds)
 
     Args:
         scenes: List of scene description strings from script generation.
@@ -186,9 +189,11 @@ def get_music_for_scenes(scenes: list[str], topic: str) -> Path | None:
         return cached[0]
 
     # --- Fallback chain (respects MUSIC_SOURCE_PRIORITY order) ---
-    source_priority = getattr(config, "MUSIC_SOURCE_PRIORITY",
-                              ["pixabay", "free_music_archive", "freesound",
-                               "incompetech", "ccmixter", "local_cache", "silence"])
+    source_priority = getattr(
+        config,
+        "MUSIC_SOURCE_PRIORITY",
+        ["pixabay", "freesound", "incompetech", "ccmixter", "local_cache", "silence"],
+    )
 
     # Determine primary scene mood for no-API sources
     mood = classify_scene_type(0, len(scenes))
@@ -250,7 +255,7 @@ def _download_from_pixabay(query: str, cache_dir: Path, cache_key: str) -> Path 
                 "media_type": "music",
                 "per_page": 5,
             },
-            timeout=15,
+            timeout=_SEARCH_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         hits = resp.json().get("hits", [])
@@ -268,7 +273,7 @@ def _download_from_pixabay(query: str, cache_dir: Path, cache_key: str) -> Path 
             out_path = cache_dir / f"{cache_key}_pixabay_{track_id}.mp3"
 
             try:
-                with requests.get(audio_url, stream=True, timeout=30) as r:
+                with requests.get(audio_url, stream=True, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as r:
                     r.raise_for_status()
                     with open(out_path, "wb") as fh:
                         for chunk in r.iter_content(chunk_size=8192):
@@ -315,7 +320,7 @@ def _download_from_free_music_archive(query: str, cache_dir: Path, cache_key: st
 
     for attempt in range(_FMA_MAX_RETRIES):
         try:
-            resp = requests.get(request_url, timeout=15)
+            resp = requests.get(request_url, timeout=_SEARCH_TIMEOUT_SECONDS)
             resp.raise_for_status()
             tracks = resp.json().get("aTracks", [])
 
@@ -332,7 +337,7 @@ def _download_from_free_music_archive(query: str, cache_dir: Path, cache_key: st
                 out_path = cache_dir / f"{cache_key}_fma_{track_id}.mp3"
 
                 try:
-                    with requests.get(download_url, stream=True, timeout=30) as r:
+                    with requests.get(download_url, stream=True, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as r:
                         r.raise_for_status()
                         with open(out_path, "wb") as fh:
                             for chunk in r.iter_content(chunk_size=8192):
@@ -404,7 +409,7 @@ def _download_from_freesound(query: str, cache_dir: Path, cache_key: str) -> Pat
                 "page_size": 5,
                 "token": api_key,
             },
-            timeout=15,
+            timeout=_SEARCH_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         results = resp.json().get("results", [])
@@ -424,7 +429,7 @@ def _download_from_freesound(query: str, cache_dir: Path, cache_key: str) -> Pat
             out_path = cache_dir / f"{cache_key}_{sound_id}.mp3"
 
             try:
-                with requests.get(preview_url, stream=True, timeout=30) as r:
+                with requests.get(preview_url, stream=True, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as r:
                     r.raise_for_status()
                     with open(out_path, "wb") as fh:
                         for chunk in r.iter_content(chunk_size=8192):

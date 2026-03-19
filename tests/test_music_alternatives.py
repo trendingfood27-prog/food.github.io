@@ -93,6 +93,13 @@ class TestDownloadIncompetech(unittest.TestCase):
         titles = [t["title"] for t in tracks]
         self.assertNotIn("Morning Routine", titles)
 
+    def test_track_lists_include_more_variety(self):
+        """Incompetech pool includes an expanded set of tracks per mood."""
+        self.assertGreaterEqual(len(self.ma._INCOMPETECH_TRACKS.get("cooking", [])), 5)
+        self.assertGreaterEqual(len(self.ma._INCOMPETECH_TRACKS.get("upbeat", [])), 5)
+        self.assertGreaterEqual(len(self.ma._INCOMPETECH_TRACKS.get("relaxed", [])), 3)
+        self.assertGreaterEqual(len(self.ma._INCOMPETECH_TRACKS.get("reveal", [])), 3)
+
 
 class TestDownloadCcMixterHttpNormalisation(unittest.TestCase):
     """Tests that ccMixter HTTPS download URLs are normalised to HTTP."""

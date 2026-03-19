@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _VOICE_POOL: list[dict] = [
     # --- US English female voices ---
-    {"name": "en-US-SaraNeural",         "gender": "female", "style": "cheerful",  "energy": "high",   "accent": "US"},
     {"name": "en-US-AriaNeural",         "gender": "female", "style": "chat",      "energy": "high",   "accent": "US"},
     {"name": "en-US-JennyNeural",        "gender": "female", "style": "newscast",  "energy": "high",   "accent": "US"},
     {"name": "en-US-MichelleNeural",     "gender": "female", "style": "natural",   "energy": "medium", "accent": "US"},

@@ -220,6 +220,26 @@ class TestGetMusicForScenes(unittest.TestCase):
             result = self.ms.get_music_for_scenes(["intro scene"], "pasta")
         self.assertIsNone(result)
 
+    def test_default_priority_does_not_use_free_music_archive(self):
+        """Default source chain should skip Free Music Archive entirely."""
+        with patch.object(self.ms.config, "MUSIC_ENABLED", True), \
+             patch.object(self.ms.config, "PIXABAY_API_KEY", None), \
+             patch.object(self.ms.config, "FREESOUND_API_KEY", None), \
+             patch.object(self.ms.config, "MUSIC_CACHE_DIR", "/tmp/test_music_cache_empty"), \
+             patch("src.music_selector._download_from_free_music_archive", return_value=None) as mock_fma, \
+             patch("src.music_selector._download_from_incompetech", return_value=None), \
+             patch("src.music_selector._download_from_ccmixter", return_value=None), \
+             patch("src.music_selector._get_local_cached_track", return_value=None), \
+             patch("src.music_selector._create_silence_fallback", return_value=Path("/tmp/silence.wav")), \
+             patch("src.music_selector.Path") as mock_path_cls:
+            mock_dir = MagicMock()
+            mock_dir.glob.return_value = []
+            mock_dir.mkdir.return_value = None
+            mock_path_cls.return_value = mock_dir
+            self.ms.get_music_for_scenes(["intro scene"], "pasta")
+
+        mock_fma.assert_not_called()
+
 
 class TestDownloadFromFreesound(unittest.TestCase):
     """Tests for music_selector._download_from_freesound()."""

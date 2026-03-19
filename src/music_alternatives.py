@@ -26,6 +26,8 @@ import requests
 import config
 
 logger = logging.getLogger(__name__)
+_SEARCH_TIMEOUT_SECONDS = 10
+_DOWNLOAD_TIMEOUT_SECONDS = 20
 
 # ---------------------------------------------------------------------------
 # Incompetech (Kevin MacLeod) — free CC BY music, no API key required
@@ -50,6 +52,16 @@ _INCOMPETECH_TRACKS: dict[str, list[dict]] = {
             "title": "Call to Adventure",
             "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Call%20to%20Adventure.mp3",
         },
+        {
+            "id": "carefree",
+            "title": "Carefree",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3",
+        },
+        {
+            "id": "monkeys_spinning_monkeys",
+            "title": "Monkeys Spinning Monkeys",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Monkeys%20Spinning%20Monkeys.mp3",
+        },
     ],
     "upbeat": [
         {
@@ -67,6 +79,16 @@ _INCOMPETECH_TRACKS: dict[str, list[dict]] = {
             "title": "Funkorama",
             "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Funkorama.mp3",
         },
+        {
+            "id": "wallpaper",
+            "title": "Wallpaper",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Wallpaper.mp3",
+        },
+        {
+            "id": "merry_go",
+            "title": "Merry Go",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Merry%20Go.mp3",
+        },
     ],
     "relaxed": [
         {
@@ -79,6 +101,11 @@ _INCOMPETECH_TRACKS: dict[str, list[dict]] = {
             "title": "Going Higher",
             "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Going%20Higher.mp3",
         },
+        {
+            "id": "airport_lounge",
+            "title": "Airport Lounge",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Airport%20Lounge.mp3",
+        },
     ],
     "reveal": [
         {
@@ -90,6 +117,11 @@ _INCOMPETECH_TRACKS: dict[str, list[dict]] = {
             "id": "sunshine",
             "title": "Sunshine",
             "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sunshine.mp3",
+        },
+        {
+            "id": "cipher",
+            "title": "Cipher",
+            "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Cipher.mp3",
         },
     ],
 }
@@ -137,7 +169,7 @@ def download_incompetech(mood: str, cache_dir: Path, cache_key: str) -> Path | N
             return out_path
 
         try:
-            with requests.get(track["url"], stream=True, timeout=30) as r:
+            with requests.get(track["url"], stream=True, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as r:
                 r.raise_for_status()
                 with open(out_path, "wb") as fh:
                     for chunk in r.iter_content(chunk_size=8192):
@@ -205,7 +237,7 @@ def download_ccmixter(mood: str, cache_dir: Path, cache_key: str) -> Path | None
                 "limit": 10,
                 "sort": "rank",
             },
-            timeout=15,
+            timeout=_SEARCH_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         results = resp.json()
@@ -236,7 +268,7 @@ def download_ccmixter(mood: str, cache_dir: Path, cache_key: str) -> Path | None
             out_path = cache_dir / f"{cache_key}_ccmixter_{upload_id}.mp3"
 
             try:
-                with requests.get(mp3_url, stream=True, timeout=30) as r:
+                with requests.get(mp3_url, stream=True, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as r:
                     r.raise_for_status()
                     with open(out_path, "wb") as fh:
                         for chunk in r.iter_content(chunk_size=8192):
