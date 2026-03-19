@@ -25,7 +25,6 @@ VIDEO_WIDTH: int = 1080
 VIDEO_HEIGHT: int = 1920
 VIDEO_FPS: int = 30
 VIDEO_DURATION_TARGET: int = 55  # seconds target — optimal for food Shorts retention
-VIDEO_MAX_DURATION_SECONDS: float = 59.0  # hard cap so final Shorts never exceed 60s
 FONT_SIZE: int = 60
 FONT_COLOR: str = "white"
 BG_MUSIC_VOLUME: float = 0.08
@@ -108,7 +107,7 @@ SUBTITLE_WORD_TIMING: bool = True      # scale each caption's duration by word c
 SUBTITLE_ADAPTIVE_FONT: bool = True    # bigger font for short (1-2 word) power bursts
 SUBTITLE_POP_SCALE: float = 1.25      # bigger pop for recipe reveals
 SUBTITLE_ALL_CAPS: bool = True         # render captions in uppercase for impact
-SUBTITLE_DELAY: float = 0.05          # intentional tiny trailing offset; lowered from 0.25s to reduce lag
+SUBTITLE_DELAY: float = 0.25          # seconds to delay captions so they trail speech (sync fix)
 SUBTITLE_END_BUFFER: float = 0.4      # seconds of padding at the end; prevents captions outrunning speech
 
 # ---------------------------------------------------------------------------
@@ -122,8 +121,6 @@ VIDEO_TRANSITION_DURATION: float = 0.35
 VIDEO_VIGNETTE: bool = True            # cinematic dark-edge vignette overlay
 VIDEO_COLOR_GRADE: bool = _env_flag("VIDEO_COLOR_GRADE", not VIDEO_FAST_RENDER)
 VIDEO_CLIP_RANDOM_START: bool = True   # random clip start for visual variety per run
-VIDEO_CLIP_MIN_DURATION: float = 2.0   # short-form pacing: change shot every 2-3 seconds
-VIDEO_CLIP_MAX_DURATION: float = 3.0
 
 # ---------------------------------------------------------------------------
 # TTS settings — female-only rotating voice pool, professional narration

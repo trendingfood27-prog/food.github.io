@@ -142,31 +142,3 @@ class TestFitBaseVideoDuration(unittest.TestCase):
         base.fx.assert_not_called()
         base.subclip.assert_not_called()
 
-
-class TestShortsPacingHelpers(unittest.TestCase):
-    """Tests for short-form pacing helpers in src.video_creator."""
-
-    def setUp(self):
-        import src.video_creator as vc
-        self.vc = vc
-
-    def test_resolve_shot_duration_window_uses_config_range(self):
-        from unittest.mock import patch
-
-        with patch.object(self.vc.config, "VIDEO_CLIP_MIN_DURATION", 2.0), \
-             patch.object(self.vc.config, "VIDEO_CLIP_MAX_DURATION", 3.0):
-            min_dur, max_dur = self.vc._resolve_shot_duration_window(55.0, 10)
-
-        self.assertGreaterEqual(min_dur, 2.0)
-        self.assertLessEqual(max_dur, 3.0)
-        self.assertLessEqual(min_dur, max_dur)
-
-    def test_plan_scene_shots_creates_enough_short_clips(self):
-        scenes = ["intro", "cook", "plate"]
-        plan = self.vc._plan_scene_shots(scenes, 12.0, 2.0, 3.0)
-
-        self.assertGreaterEqual(len(plan), 4)
-        for scene, dur in plan:
-            self.assertIn(scene, scenes)
-            self.assertGreaterEqual(dur, 2.0)
-            self.assertLessEqual(dur, 3.0)

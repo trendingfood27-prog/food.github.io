@@ -228,9 +228,6 @@ All settings are in `config.py`. Key settings:
 ```python
 YOUTUBE_CATEGORY_ID = "26"      # Howto & Style
 VIDEO_DURATION_TARGET = 55      # seconds (optimal for Shorts retention)
-VIDEO_MAX_DURATION_SECONDS = 59 # hard cap so Shorts stay under 60s
-VIDEO_CLIP_MIN_DURATION = 2.0   # fast-cut pacing (2-3s per shot)
-VIDEO_CLIP_MAX_DURATION = 3.0
 TTS_VOICE_ROTATE = True         # rotate female voices each run
 TTS_RATE = "+5%"                # slightly faster for energy
 OPENROUTER_MODEL = "openai/gpt-4o-mini"  # cost-effective AI model

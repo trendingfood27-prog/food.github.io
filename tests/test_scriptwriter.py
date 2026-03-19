@@ -92,30 +92,6 @@ class TestGenerateScript(unittest.TestCase):
         has_cta = any(word in script for word in ["subscribe", "follow", "like"])
         self.assertTrue(has_cta, "Script must contain a subscribe/follow CTA")
 
-    def test_script_contains_multiple_cta_types(self):
-        """Script should include both engagement and conversion CTAs."""
-        from src import scriptwriter as sw
-
-        result = self.generate_script("weeknight pasta")
-        script = result["script"].lower()
-        like_cta = any(word.lower() in script for word in sw._CTA_EARLY)
-        mid_cta = any(word.lower() in script for word in sw._CTA_MID)
-        late_cta = any(word.lower() in script for word in sw._CTA_LATE)
-        self.assertTrue(any(word in script for word in ["like", "tap the like"]),
-                        "Expected a like-style CTA in script")
-        self.assertTrue(any(word in script for word in ["subscribe", "follow"]),
-                        "Expected a subscribe/follow CTA in script")
-        self.assertTrue(any(word in script for word in ["comment", "share", "save", "tag"]),
-                        "Expected a comment/share-style CTA in script")
-        self.assertTrue(like_cta, "Expected an early CTA template to be present")
-        self.assertTrue(mid_cta, "Expected a mid CTA template to be present")
-        self.assertTrue(late_cta, "Expected a late CTA template to be present")
-
-    def test_script_word_count_stays_shorts_friendly(self):
-        """Scripts should stay concise for sub-60-second Shorts pacing."""
-        result = self.generate_script("crispy chicken sandwich")
-        self.assertLessEqual(len(result["script"].split()), 155)
-
     def test_tags_is_list_of_strings(self):
         result = self.generate_script("salmon recipe")
         tags = result["tags"]

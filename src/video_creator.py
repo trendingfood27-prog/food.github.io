@@ -66,9 +66,6 @@ _FOOD_FALLBACK_QUERIES = [
     "baking bread oven",
 ]
 
-_MIN_ABSOLUTE_CLIP_DURATION = 0.75
-_DEFAULT_FALLBACK_SCENE = "Food preparation close-up in kitchen"
-
 
 def _fit_bg_audio_to_duration(bg_audio: Any, target_duration: float, afx: Any) -> Any:
     """Return background audio safely fitted to target duration.
@@ -110,43 +107,6 @@ def _fit_base_video_duration(base: Any, target_duration: float, vfx: Any) -> Any
     if base.duration > target_duration:
         return base.subclip(0, target_duration)
     return base
-
-
-def _resolve_shot_duration_window(target_duration: float, scene_count: int) -> tuple[float, float]:
-    """Resolve per-shot duration bounds with sensible floor/ceiling limits."""
-    min_clip = max(_MIN_ABSOLUTE_CLIP_DURATION, float(getattr(config, "VIDEO_CLIP_MIN_DURATION", 2.0)))
-    max_clip = max(min_clip, float(getattr(config, "VIDEO_CLIP_MAX_DURATION", 3.0)))
-    if target_duration <= 0 or scene_count <= 0:
-        return min_clip, max_clip
-
-    average = target_duration / scene_count
-    adaptive = max(_MIN_ABSOLUTE_CLIP_DURATION, min(average, max_clip))
-    return min(min_clip, adaptive), max(min_clip, adaptive)
-
-
-def _clamp_short_duration(duration: float) -> float:
-    """Clamp duration to configured sub-60-second Shorts maximum."""
-    max_duration = float(getattr(config, "VIDEO_MAX_DURATION_SECONDS", 59.0))
-    return min(duration, max_duration)
-
-
-def _plan_scene_shots(
-    scenes: list[str],
-    target_duration: float,
-    clip_min_dur: float,
-    clip_max_dur: float,
-) -> list[tuple[str, float]]:
-    """Build a scene shot plan that maintains frequent 2-3 second visual cuts."""
-    scene_pool = scenes if scenes else [_DEFAULT_FALLBACK_SCENE]
-    avg_dur = max(_MIN_ABSOLUTE_CLIP_DURATION, (clip_min_dur + clip_max_dur) / 2)
-    shot_count = max(1, math.ceil(target_duration / avg_dur))
-
-    plan: list[tuple[str, float]] = []
-    for idx in range(shot_count):
-        scene = scene_pool[idx % len(scene_pool)]
-        shot_duration = random.uniform(clip_min_dur, clip_max_dur)
-        plan.append((scene, shot_duration))
-    return plan
 
 
 def _pexels_headers() -> dict[str, str]:
@@ -729,11 +689,6 @@ def create_video(
 
     w, h = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
     target_duration = audio_duration if audio_duration > 0 else config.VIDEO_DURATION_TARGET
-    max_duration = float(getattr(config, "VIDEO_MAX_DURATION_SECONDS", 59.0))
-    if target_duration > max_duration:
-        logger.info("Clamping target duration from %.2fs to %.2fs to keep Short under 60s",
-                    target_duration, max_duration)
-        target_duration = _clamp_short_duration(target_duration)
     transition_dur = getattr(config, "VIDEO_TRANSITION_DURATION", 0.35)
     downloaded: list[Path] = []
     video_clips: list[Any] = []
@@ -742,9 +697,8 @@ def create_video(
     # ------------------------------------------------------------------
     # 1. Fetch food-themed stock footage for each scene
     # ------------------------------------------------------------------
-        clip_min_dur, clip_max_dur = _resolve_shot_duration_window(target_duration, len(scenes))
-        shot_plan = _plan_scene_shots(scenes, target_duration, clip_min_dur, clip_max_dur)
-        for scene_idx, (scene, shot_core_dur) in enumerate(shot_plan):
+        time_per_scene = target_duration / max(len(scenes), 1)
+        for scene_idx, scene in enumerate(scenes):
             clip_added = False
 
             video_urls = _search_pexels_video(scene, per_page=5)
@@ -753,7 +707,7 @@ def create_video(
                     clip_path = _download_file(url, ".mp4")
                     downloaded.append(clip_path)
                     vc = VideoFileClip(str(clip_path), audio=False)
-                    scene_dur = shot_core_dur + transition_dur
+                    scene_dur = time_per_scene + transition_dur
                     if vc.duration < scene_dur:
                         loops = math.ceil(scene_dur / vc.duration)
                         vc = vc.loop(n=loops)
@@ -784,7 +738,7 @@ def create_video(
                     try:
                         img_path = _download_file(img_url, ".jpg")
                         downloaded.append(img_path)
-                        scene_dur = shot_core_dur + transition_dur
+                        scene_dur = time_per_scene + transition_dur
                         ic = ImageClip(str(img_path)).set_duration(scene_dur)
                         ic = _resize_clip(ic, w, h)
                         ic = _ken_burns_effect(ic, w, h, zoom_ratio=0.08)
@@ -799,7 +753,7 @@ def create_video(
                 try:
                     from src.footage_alternatives import fetch_fallback_clip  # noqa: PLC0415
 
-                    scene_dur = shot_core_dur + transition_dur
+                    scene_dur = time_per_scene + transition_dur
                     alt_path = fetch_fallback_clip(
                         scene_description=scene,
                         duration=scene_dur,
@@ -823,7 +777,7 @@ def create_video(
 
             if not clip_added:
                 logger.warning("No footage for scene '%s'; using warm gradient placeholder", scene)
-                scene_dur = shot_core_dur + transition_dur
+                scene_dur = time_per_scene + transition_dur
                 # Warm food-themed gradient placeholder
                 placeholder = ColorClip(size=(w, h), color=(180, 80, 20)).set_duration(scene_dur)
                 video_clips.append(placeholder)
@@ -855,11 +809,6 @@ def create_video(
             default_duration=config.VIDEO_DURATION_TARGET,
             measured_tts_duration=getattr(tts_audio, "duration", None),
         )
-        if target_duration > max_duration:
-            logger.info("Clamping resolved duration from %.2fs to %.2fs to keep Short under 60s",
-                        target_duration, max_duration)
-            target_duration = _clamp_short_duration(target_duration)
-            tts_audio = tts_audio.subclip(0, target_duration)
 
         base = _fit_base_video_duration(base, target_duration, vfx)
 
