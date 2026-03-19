@@ -99,6 +99,16 @@ def _resolve_target_duration(
     return resolved
 
 
+def _fit_base_video_duration(base: Any, target_duration: float, vfx: Any) -> Any:
+    """Ensure visual timeline fully covers narration duration."""
+    if base.duration < target_duration:
+        freeze_duration = target_duration - base.duration
+        return base.fx(vfx.freeze, t=max(base.duration - 0.05, 0), freeze_duration=freeze_duration)
+    if base.duration > target_duration:
+        return base.subclip(0, target_duration)
+    return base
+
+
 def _pexels_headers() -> dict[str, str]:
     """Return the Pexels API authorisation header."""
     if not config.PEXELS_API_KEY:
@@ -529,12 +539,12 @@ def _build_caption_clips(script_text: str, total_duration: float, video_w: int, 
             txt_clip = None
             chosen_font: str | None = None
             last_font_exc: Exception | None = None
-            for font_name in ordered_fonts:
+            for candidate_font in ordered_fonts:
                 try:
                     txt_clip = TextClip(
                         display_text,
                         fontsize=font_size,
-                        font=font_name,
+                        font=candidate_font,
                         color=color,
                         stroke_color="black",
                         stroke_width=stroke_w,
@@ -542,12 +552,23 @@ def _build_caption_clips(script_text: str, total_duration: float, video_w: int, 
                         size=(video_w - 120, None),
                         align="center",
                     )
-                    chosen_font = font_name
+                    chosen_font = candidate_font
                     break
                 except Exception as exc:  # noqa: BLE001
                     last_font_exc = exc
+                    logger.debug(
+                        "Subtitle font '%s' unavailable (%s): %s",
+                        candidate_font,
+                        type(exc).__name__,
+                        exc,
+                    )
             if txt_clip is None:
-                logger.warning("Caption clip %d skipped: no usable subtitle font (%s)", i, last_font_exc)
+                logger.warning(
+                    "Subtitle clip %d skipped: no usable subtitle font (%s: %s)",
+                    i,
+                    type(last_font_exc).__name__ if last_font_exc else "UnknownError",
+                    last_font_exc,
+                )
                 continue
             txt_w, txt_h = txt_clip.size
             pad_x, pad_y = 36, 20
@@ -789,11 +810,7 @@ def create_video(
             measured_tts_duration=getattr(tts_audio, "duration", None),
         )
 
-        if base.duration < target_duration:
-            freeze_duration = target_duration - base.duration
-            base = base.fx(vfx.freeze, t=max(base.duration - 0.05, 0), freeze_duration=freeze_duration)
-        elif base.duration > target_duration:
-            base = base.subclip(0, target_duration)
+        base = _fit_base_video_duration(base, target_duration, vfx)
 
         # Prefer dynamically-supplied music_path; fall back to static BG_MUSIC_PATH
         effective_music_path = music_path if music_path is not None else Path(config.BG_MUSIC_PATH)

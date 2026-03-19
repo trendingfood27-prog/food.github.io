@@ -191,6 +191,16 @@ def _topic_emoji(topic: str) -> str:
     return _DEFAULT_FOOD_EMOJIS[seed % len(_DEFAULT_FOOD_EMOJIS)]
 
 
+def _truncate_title_lines(lines: list[str], max_lines: int = 3) -> list[str]:
+    """Limit title lines and append ellipsis when truncation happens."""
+    if len(lines) <= max_lines:
+        return lines
+    truncated = lines[:max_lines]
+    if not truncated[-1].endswith("..."):
+        truncated[-1] = f"{truncated[-1]}..."
+    return truncated
+
+
 def create_thumbnail(title: str, topic: str) -> Path:
     """Generate a 1280 × 720 JPEG food content thumbnail for the given video *title*.
 
@@ -284,10 +294,7 @@ def create_thumbnail(title: str, topic: str) -> Path:
     title_font = _load_font(100)
     max_text_w = THUMB_W - 120
     lines = _wrap_text(title_upper, title_font, max_text_w)
-    if len(lines) > 3:
-        lines = lines[:3]
-        if not lines[-1].endswith("..."):
-            lines[-1] = f"{lines[-1].rstrip('.')}..."
+    lines = _truncate_title_lines(lines, max_lines=3)
     line_height = 120
     total_text_h = len(lines) * line_height
     start_y = max(170, (THUMB_H - total_text_h) // 2 - 10)
