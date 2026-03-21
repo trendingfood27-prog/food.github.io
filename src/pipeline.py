@@ -5,9 +5,8 @@ Runs all steps in sequence:
   1. Fetch the best trending topic (food-scored)
   2. Generate a professional food script (via OpenRouter AI or templates)
   3. Convert the script to speech (TTS — female voice)
-  4. Create the food-style video
-  5. Generate a food thumbnail
-  6. Upload to YouTube
+  4. Create a cinematic food-style short
+  5. Upload to YouTube
 
 Usage::
 
@@ -50,7 +49,6 @@ def run_pipeline() -> None:
 
     audio_path: Path | None = None
     video_path: Path | None = None
-    thumb_path: Path | None = None
 
     try:
         # ------------------------------------------------------------------
@@ -131,19 +129,10 @@ def run_pipeline() -> None:
         logger.info("      Video path: '%s'", video_path)
 
         # ------------------------------------------------------------------
-        # Step 5: Generate food thumbnail
-        # ------------------------------------------------------------------
-        logger.info("[5/6] \U0001f5bc\ufe0f  Designing thumbnail — generating food content thumbnail…")
-        from src.thumbnail import create_thumbnail  # noqa: PLC0415
-
-        thumb_path = create_thumbnail(title, topic)
-        logger.info("      Thumbnail path: '%s'", thumb_path)
-
-        # ------------------------------------------------------------------
-        # Step 5.5: Virality optimization analysis
+        # Step 4.5: Virality optimization analysis
         # ------------------------------------------------------------------
         if getattr(config, "VIRALITY_OPTIMIZATION_ENABLED", True):
-            logger.info("[5.5/6] \U0001f4ca Optimizing — running virality analysis…")
+            logger.info("[4.5/5] \U0001f4ca Optimizing — running virality analysis…")
             try:
                 from src.virality_optimizer import analyze_virality  # noqa: PLC0415
                 report = analyze_virality(script_data, topic, music_path=music_path)
@@ -159,9 +148,9 @@ def run_pipeline() -> None:
                 logger.warning("      Virality optimization failed: %s — continuing", exc)
 
         # ------------------------------------------------------------------
-        # Step 6: Upload to YouTube
+        # Step 5: Upload to YouTube
         # ------------------------------------------------------------------
-        logger.info("[6/6] \U0001f680 Upload and go viral — uploading to YouTube…")
+        logger.info("[5/5] \U0001f680 Upload and go viral — uploading to YouTube…")
         from src.uploader import upload_video  # noqa: PLC0415
 
         video_id, video_url = upload_video(
@@ -169,7 +158,6 @@ def run_pipeline() -> None:
             title=title,
             description=description,
             tags=tags,
-            thumbnail_path=thumb_path,
         )
         logger.info("      Upload complete: %s", video_url)
 
@@ -189,7 +177,7 @@ def run_pipeline() -> None:
         elapsed = time.time() - start_time
         logger.error("\U0001f4a5 Pipeline failed after %.1f seconds: %s", elapsed, exc, exc_info=True)
     finally:
-        _cleanup(audio_path, video_path, thumb_path)
+        _cleanup(audio_path, video_path)
         logger.info("\U0001f9f9 Temporary files cleaned up")
 
 

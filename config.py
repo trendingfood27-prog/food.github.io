@@ -121,6 +121,7 @@ VIDEO_TRANSITION_DURATION: float = 0.35
 VIDEO_VIGNETTE: bool = True            # cinematic dark-edge vignette overlay
 VIDEO_COLOR_GRADE: bool = _env_flag("VIDEO_COLOR_GRADE", not VIDEO_FAST_RENDER)
 VIDEO_CLIP_RANDOM_START: bool = True   # random clip start for visual variety per run
+VIDEO_CINEMATIC_LOOK: bool = _env_flag("VIDEO_CINEMATIC_LOOK", True)  # enable filmic contrast/warmth grade
 
 # ---------------------------------------------------------------------------
 # TTS settings — female-only rotating voice pool, professional narration

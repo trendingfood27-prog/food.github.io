@@ -2,7 +2,7 @@
 
 > Fully automated pipeline that creates **engaging food-making YouTube Shorts**.
 > Uses AI-powered professional scripts (OpenRouter), female neural TTS voices,
-> multi-source food stock footage, and viral food thumbnails.
+> multi-source food stock footage with cinematic grading.
 > **Designed for English-speaking audiences.**
 
 [![Tests](https://github.com/itsShahAmar/annimation.github.io/actions/workflows/tests.yml/badge.svg)](https://github.com/itsShahAmar/annimation.github.io/actions/workflows/tests.yml)
@@ -19,8 +19,7 @@ The **Food Making Videos Factory** automatically:
 2. 🤖 **AI Script Writing** — Professional scripts via [OpenRouter AI](https://openrouter.ai) (GPT-4o-mini) with viral hooks, step-by-step food narration, and strategic CTAs at 25%, 50%, 75%, and 95% of the script. Falls back to high-quality templates when the API key is not set.
 3. 🎙️ **Female Professional Narration** — 12 female Microsoft Edge Neural TTS voices rotating each run for variety (Sara, Aria, Jenny, Michelle, Cora, Elizabeth, Sonia, Libby, Natasha, Clara, Neerja, Emily)
 4. 🎬 **Food Video Assembly** — Stock footage from Pexels (primary), Pixabay (secondary), and Unsplash (image fallback) with warm food colour grading and bold captions
-5. 🖼️ **Food Thumbnails** — Warm gradient backgrounds, food emoji matched to topic, VIRAL!/EASY!/5-MIN accent overlays
-6. 🚀 **Uploads & Goes Viral** — Direct to your YouTube channel via the official API (category: Howto & Style)
+5. 🚀 **Uploads & Goes Viral** — Direct to your YouTube channel via the official API (category: Howto & Style)
 
 All 100% automated — runs every 6 hours via GitHub Actions.
 
@@ -189,14 +188,6 @@ Every video is automatically optimised for maximum engagement:
 - Niche tags: topic-specific ingredients and techniques
 - Trending hashtags: `#FoodHacks`, `#CookingTips`, `#RecipeIdeas`
 
-### Thumbnail Design
-- Warm food-appetising gradient backgrounds
-- Food emoji matched to the specific topic
-- Bold white text with black stroke (readable at 1/4 size)
-- Accent badge: VIRAL! / EASY! / 5-MIN / SECRET / HACK / MUST TRY!
-
----
-
 ## 🗂️ Project Structure
 
 ```
@@ -209,7 +200,6 @@ annimation.github.io/
 │   ├── scriptwriter.py        # OpenRouter AI + template script generation
 │   ├── tts.py                 # Female-only Edge TTS with voice rotation
 │   ├── video_creator.py       # Multi-source food video assembly
-│   ├── thumbnail.py           # Food-focused thumbnail generator
 │   └── uploader.py            # YouTube upload
 ├── tests/
 │   ├── test_scriptwriter.py   # Script generation tests
@@ -249,7 +239,6 @@ python -m pytest tests/ -v
 |---------|---------|
 | `edge-tts` | Microsoft neural TTS (female voices) |
 | `moviepy` | Video assembly and editing |
-| `Pillow` | Thumbnail generation |
 | `requests` | Stock media API calls (Pexels, Pixabay, Unsplash) |
 | `httpx` | OpenRouter AI API calls |
 | `pydub` | Audio normalization |
