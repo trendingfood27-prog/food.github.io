@@ -6,7 +6,9 @@ Run with: python -m pytest tests/ -v
 """
 
 import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch, PropertyMock
@@ -226,6 +228,121 @@ class TestValidateCredentials(unittest.TestCase):
                 uploader.validate_credentials()
 
         self.assertIn("credential check failed", str(ctx.exception))
+
+
+class TestUploadVideo(unittest.TestCase):
+    """Tests for upload_video()."""
+
+    def _make_mock_creds(self):
+        creds = MagicMock()
+        creds.refresh_token = "1//test"
+        creds._scopes = None
+        creds._granted_scopes = None
+        return creds
+
+    def _make_temp_video(self):
+        """Create a temporary .mp4 file and return its path."""
+        fd, path = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
+        return path
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_raises_when_video_file_not_found(self):
+        """upload_video should raise RuntimeError if the video file is missing."""
+        import src.uploader as uploader
+
+        with self.assertRaises(RuntimeError) as ctx:
+            uploader.upload_video("/nonexistent/path/video.mp4", "Title", "Desc", [])
+
+        self.assertIn("Video file not found", str(ctx.exception))
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_successful_upload_returns_video_id_and_url(self):
+        """upload_video should return (video_id, url) on success."""
+        import src.uploader as uploader
+
+        mock_creds = self._make_mock_creds()
+        mock_youtube = MagicMock()
+        mock_youtube.videos().insert().execute.return_value = {"id": "abc123"}
+
+        video_path = self._make_temp_video()
+        try:
+            with patch("google.oauth2.credentials.Credentials", return_value=mock_creds), \
+                 patch("google.auth.transport.requests.Request"), \
+                 patch("googleapiclient.discovery.build", return_value=mock_youtube), \
+                 patch("googleapiclient.http.MediaFileUpload"):
+                video_id, url = uploader.upload_video(video_path, "Test Title", "Test Desc", ["tag1"])
+
+            self.assertEqual(video_id, "abc123")
+            self.assertEqual(url, "https://www.youtube.com/watch?v=abc123")
+        finally:
+            os.unlink(video_path)
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_raises_when_api_returns_no_video_id(self):
+        """upload_video should raise RuntimeError when API returns no video id."""
+        import src.uploader as uploader
+
+        mock_creds = self._make_mock_creds()
+        mock_youtube = MagicMock()
+        mock_youtube.videos().insert().execute.return_value = {}
+
+        video_path = self._make_temp_video()
+        try:
+            with patch("google.oauth2.credentials.Credentials", return_value=mock_creds), \
+                 patch("google.auth.transport.requests.Request"), \
+                 patch("googleapiclient.discovery.build", return_value=mock_youtube), \
+                 patch("googleapiclient.http.MediaFileUpload"):
+                with self.assertRaises(RuntimeError) as ctx:
+                    uploader.upload_video(video_path, "Title", "Desc", [])
+
+            self.assertIn("did not return a video id", str(ctx.exception))
+        finally:
+            os.unlink(video_path)
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_raises_when_insert_raises(self):
+        """upload_video wraps unexpected API errors as RuntimeError."""
+        import src.uploader as uploader
+
+        mock_creds = self._make_mock_creds()
+        mock_youtube = MagicMock()
+        mock_youtube.videos().insert().execute.side_effect = Exception("quota exceeded")
+
+        video_path = self._make_temp_video()
+        try:
+            with patch("google.oauth2.credentials.Credentials", return_value=mock_creds), \
+                 patch("google.auth.transport.requests.Request"), \
+                 patch("googleapiclient.discovery.build", return_value=mock_youtube), \
+                 patch("googleapiclient.http.MediaFileUpload"):
+                with self.assertRaises(RuntimeError) as ctx:
+                    uploader.upload_video(video_path, "Title", "Desc", [])
+
+            self.assertIn("YouTube upload failed", str(ctx.exception))
+        finally:
+            os.unlink(video_path)
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_raises_when_no_channel_found(self):
+        """validate_credentials raises when channel list is empty."""
+        import src.uploader as uploader
+
+        mock_creds = self._make_mock_creds()
+        mock_youtube = MagicMock()
+        mock_youtube.channels().list().execute.return_value = {"items": []}
+
+        with patch("google.oauth2.credentials.Credentials", return_value=mock_creds), \
+             patch("google.auth.transport.requests.Request"), \
+             patch("googleapiclient.discovery.build", return_value=mock_youtube):
+            with self.assertRaises(RuntimeError) as ctx:
+                uploader.validate_credentials()
+
+        self.assertIn("No YouTube channel found", str(ctx.exception))
 
 
 if __name__ == "__main__":
