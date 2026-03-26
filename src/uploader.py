@@ -8,6 +8,9 @@ from typing import Any
 
 import config
 
+# Scopes required when running the one-time OAuth2 authorisation flow (see README Step 3).
+# These must NOT be passed to Credentials() during a token refresh — Google's token endpoint
+# rejects refresh requests that include a scope parameter and responds with invalid_scope.
 _YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
@@ -56,7 +59,10 @@ def _build_credentials() -> Any:
         token_uri=token_data.get("token_uri") or client_secret.get("token_uri"),
         client_id=client_secret.get("client_id"),
         client_secret=client_secret.get("client_secret"),
-        scopes=_YOUTUBE_SCOPES,
+        # Do NOT pass scopes here.  The OAuth2 refresh-token grant does not accept
+        # a scope parameter; sending one causes Google to respond with invalid_scope.
+        # The refreshed access token automatically carries the same scopes that were
+        # granted during the original authorisation flow.
     )
 
     if not getattr(creds, "refresh_token", None):
@@ -65,9 +71,20 @@ def _build_credentials() -> Any:
     try:
         creds.refresh(Request())
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(
-            "OAuth2 token refresh failed. Re-run auth flow and update YOUTUBE_TOKEN."
-        ) from exc
+        msg = str(exc).lower()
+        if "invalid_scope" in msg:
+            hint = (
+                "OAuth2 token refresh failed (invalid_scope). "
+                "Re-run the authorisation flow with the correct scopes and update YOUTUBE_TOKEN."
+            )
+        elif "invalid_grant" in msg:
+            hint = (
+                "OAuth2 token refresh failed (invalid_grant). "
+                "The refresh token has been revoked or expired. Re-authorize and update YOUTUBE_TOKEN."
+            )
+        else:
+            hint = "OAuth2 token refresh failed. Re-run auth flow and update YOUTUBE_TOKEN."
+        raise RuntimeError(hint) from exc
 
     # Ensure downstream Google client does not fail on immutable scope objects.
     setattr(creds, "_scopes", None)

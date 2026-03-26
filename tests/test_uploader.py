@@ -146,8 +146,8 @@ class TestBuildCredentials(unittest.TestCase):
 
     @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
     @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
-    def test_raises_when_refresh_fails(self):
-        """Any exception during refresh should raise RuntimeError with re-auth hint."""
+    def test_raises_when_refresh_fails_invalid_grant(self):
+        """invalid_grant during refresh should raise RuntimeError with revoked-token hint."""
         import src.uploader as uploader
 
         mock_creds = self._make_mock_creds()
@@ -160,6 +160,44 @@ class TestBuildCredentials(unittest.TestCase):
 
         self.assertIn("OAuth2 token refresh failed", str(ctx.exception))
         self.assertIn("YOUTUBE_TOKEN", str(ctx.exception))
+        self.assertIn("invalid_grant", str(ctx.exception))
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_raises_when_refresh_fails_invalid_scope(self):
+        """invalid_scope during refresh raises RuntimeError with actionable scope hint."""
+        import src.uploader as uploader
+
+        mock_creds = self._make_mock_creds()
+        mock_creds.refresh.side_effect = Exception("invalid_scope: Bad Request")
+
+        with patch("google.oauth2.credentials.Credentials", return_value=mock_creds), \
+             patch("google.auth.transport.requests.Request"):
+            with self.assertRaises(RuntimeError) as ctx:
+                uploader._build_credentials()
+
+        self.assertIn("OAuth2 token refresh failed", str(ctx.exception))
+        self.assertIn("invalid_scope", str(ctx.exception))
+
+    @patch("config.YOUTUBE_CLIENT_SECRET_JSON", _VALID_CLIENT_SECRET)
+    @patch("config.YOUTUBE_TOKEN_JSON", _VALID_TOKEN)
+    def test_credentials_constructed_without_scopes(self):
+        """Credentials must NOT be constructed with scopes — sending scopes on refresh
+        causes Google to return invalid_scope. This is the permanent fix."""
+        import src.uploader as uploader
+
+        mock_creds = self._make_mock_creds()
+        captured_kwargs = {}
+
+        def capture_credentials(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_creds
+
+        with patch("google.oauth2.credentials.Credentials", side_effect=capture_credentials), \
+             patch("google.auth.transport.requests.Request"):
+            uploader._build_credentials()
+
+        self.assertNotIn("scopes", captured_kwargs, "Prevents invalid_scope error on refresh")
 
 
 class TestIsFatalOAuthError(unittest.TestCase):
